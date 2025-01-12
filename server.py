@@ -23,7 +23,7 @@ from quart_compress import Compress
 import secrets
 
 address = None  # 填你的公网IP或域名，不填则会自动尝试获取
-useHttps = False
+useHttps = True
 
 server = HttpServer(qq_mod=True)
 app = nonebot.get_bot().server_app
