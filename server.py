@@ -26,7 +26,7 @@ import traceback
 from .autopcr.util.logger import instance as logger
 
 address = None  # 填你的公网IP或域名，不填则会自动尝试获取
-useHttps = False
+useHttps = True
 
 server = HttpServer(qq_mod=True)
 app = nonebot.get_bot().server_app
@@ -36,7 +36,7 @@ Compress(app)
 app.secret_key = secrets.token_urlsafe(16) # cookie expires when reboot
 app.register_blueprint(server.app)
 
-prefix = '#'
+prefix = 'P'
 
 sv_help = f"""
 - {prefix}配置日常 一切的开始
@@ -88,8 +88,8 @@ sv = Service(
     name="自动清日常",
     use_priv=priv.NORMAL,  # 使用权限
     manage_priv=priv.ADMIN,  # 管理权限
-    visible=False,  # False隐藏
-    enable_on_default=False,  # 是否默认启用
+    visible=True,  # False隐藏
+    enable_on_default=True,  # 是否默认启用
     bundle='pcr工具',  # 属于哪一类
     help_=sv_help  # 帮助文本
 )
@@ -138,7 +138,7 @@ class HoshinoEvent(BotEvent):
             await self.finish("只能指定一个用户")
 
         return self.at_sb[0] if self.at_sb else str(self.user_id)
-    
+
     async def send_qq(self):
         return self.user_id
 
@@ -181,7 +181,7 @@ async def check_validate(botev: BotEvent, qq: str, cnt: int = 1):
 
             url = validate.url
             url = address + url.lstrip("/daily/")
-            
+
             msg=f"pcr账号登录需要验证码，请点击以下链接在120秒内完成认证:\n{url}"
             await botev.send(msg)
 
@@ -363,8 +363,13 @@ async def clean_daily_all(botev: BotEvent, accmgr: AccountManager):
     try:
         alias_str = ','.join(alias)
         await botev.send(f"开始为{alias_str}清理日常")
+<<<<<<< HEAD
     except Exception as e:  
         logger.exception(e)
+=======
+    except Exception as e:
+        print(e)
+>>>>>>> temp
 
     loop = asyncio.get_event_loop()
     loop.create_task(check_validate(botev, accmgr.qid, len(alias)))
@@ -454,8 +459,13 @@ async def clean_daily_from(botev: BotEvent, acc: Account):
     alias = escape(acc.alias)
     try:
         await botev.send(f"开始为{alias}清理日常")
+<<<<<<< HEAD
     except Exception as e:  
         logger.exception(e)
+=======
+    except Exception as e:
+        print(e)
+>>>>>>> temp
 
     try:
         is_admin_call = await botev.is_admin()
@@ -546,7 +556,7 @@ async def cron_status(botev: BotEvent):
     start_logs = [log for log in logs if log.operation == eCronOperation.START and log.time.date() == cur.date()]
     finish_logs = [log for log in logs if log.operation == eCronOperation.FINISH and log.time.date() == cur.date()]
     status = Counter([log.status for log in finish_logs])
-    msg = [f'今日定时任务：启动{len(start_logs)}个，完成{len(finish_logs)}个'] 
+    msg = [f'今日定时任务：启动{len(start_logs)}个，完成{len(finish_logs)}个']
     msg += [f"{k.value}: {v}" for k, v in status.items()]
     # notice = [log for log in logs if log.status != eResultStatus.SUCCESS]
     # if notice:

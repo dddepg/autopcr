@@ -1,0 +1,30 @@
+name: Sync with Upstream
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 每天 UTC 时间 0:00 触发
+  workflow_dispatch:  # 允许手动触发
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        repository: dddepg/autopcr
+        token: ${{ secrets.my_GITHUB_TOKEN }}
+        submodules: true
+    - name: Add upstream remote
+      run: |
+        git remote add upstream https://github.com/cc004/autopcr.git
+        git fetch upstream
+
+    - name: Merge upstream changes
+      run: |
+        git config user.name "dddepg"
+        git config user.email "${{ secrets.MY_EMAIL }}"
+        git merge upstream/main -X ours --allow-unrelated-histories -m "Sync with upstream"
+        git push origin main
+
+    - name: Clean up
+      run: |
+        git remote remove upstream
