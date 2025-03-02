@@ -363,13 +363,8 @@ async def clean_daily_all(botev: BotEvent, accmgr: AccountManager):
     try:
         alias_str = ','.join(alias)
         await botev.send(f"开始为{alias_str}清理日常")
-<<<<<<< HEAD
-    except Exception as e:  
-        logger.exception(e)
-=======
     except Exception as e:
         print(e)
->>>>>>> temp
 
     loop = asyncio.get_event_loop()
     loop.create_task(check_validate(botev, accmgr.qid, len(alias)))
@@ -459,13 +454,8 @@ async def clean_daily_from(botev: BotEvent, acc: Account):
     alias = escape(acc.alias)
     try:
         await botev.send(f"开始为{alias}清理日常")
-<<<<<<< HEAD
-    except Exception as e:  
-        logger.exception(e)
-=======
     except Exception as e:
         print(e)
->>>>>>> temp
 
     try:
         is_admin_call = await botev.is_admin()
