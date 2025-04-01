@@ -1,4 +1,3 @@
-import time
 from typing import List, Dict, Set, Tuple, Union
 import typing
 from ..model.enums import eCampaignCategory
@@ -186,6 +185,11 @@ class database():
             self.unique_equipment_max_rank: Dict[int, int] = {
                 equip_slot: max(self.unique_equip_rank[equip_slot].keys()) for equip_slot in self.unique_equip_rank
             }
+
+            self.hatsune_boss: Dict[int, HatsuneBoss] = (
+                HatsuneBoss.query(db)
+                .to_dict(lambda x: x.boss_id, lambda x: x)
+            )
 
             self.hatsune_schedule: Dict[int, HatsuneSchedule] = (
                 HatsuneSchedule.query(db)
@@ -420,9 +424,18 @@ class database():
                 .to_list()
             )
 
+            self.birthday_story: List[StoryDetail] = (
+                StoryDetail.query(db)
+                .where(lambda x: x.story_id >= 4010000 and x.story_id < 4020000)
+                .to_list()
+            )
+
             self.main_story: List[StoryDetail] = (
                 StoryDetail.query(db)
                 .where(lambda x: x.story_id >= 2000000 and x.story_id < 3000000)
+                .concat(
+                    BywayStoryDetail.query(db)
+                )
                 .to_list()
             )
 
@@ -477,6 +490,12 @@ class database():
                 .to_dict(lambda x: x.equipment_id, lambda x: x)
             )
 
+            self.equip_promotion_to_raw_ore: Dict[int, ItemType] = (
+                EquipmentDatum.query(db)
+                .where(lambda x: self.is_equip_raw_ore((eInventoryType.Equip, x.equipment_id)))
+                .to_dict(lambda x: x.promotion_level, lambda x: (eInventoryType.Equip, x.equipment_id))
+            )
+
             self.skill_cost: Dict[int, int] = (
                 SkillCost.query(db)
                 .to_dict(lambda x: x.target_level, lambda x: x.cost)
@@ -496,7 +515,6 @@ class database():
                 UnitSkillDatum.query(db)
                 .to_dict(lambda x: x.unit_id, lambda x: x)
             )
-
 
             self.experience_unit: Dict[int, int] = (
                 ExperienceUnit.query(db)
@@ -727,6 +745,11 @@ class database():
                 .to_dict(lambda x: x.event_id, lambda x: x)
             )
 
+            self.won_story_data: Dict[int, WonStoryDatum] = (
+                WonStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
+            )
+
             self.mme_story_data: Dict[int, MmeStoryDatum] = (
                 MmeStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
@@ -826,6 +849,12 @@ class database():
             )
             self.quest_name.update(
                 {x.travel_quest_id :x.travel_quest_name for x in self.travel_quest_data.values()}
+            )
+
+            self.shop_static_price_group: Dict[int, List[ShopStaticPriceGroup]] = (
+                ShopStaticPriceGroup.query(db)
+                .group_by(lambda x: x.price_group_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_list())
             )
 
             self.ex_rarity_name = {
@@ -1103,12 +1132,12 @@ class database():
         tomorrow = now + datetime.timedelta(days = 1)
         half_day = datetime.timedelta(hours = 7)
         n3 = (flow(self.campaign_schedule.values())
-                .where(lambda x: self.is_normal_quest_campaign(x.id) and x.value >= 3000 and self.is_level_effective_scope_in_campaign(level, x.id))
+                .where(lambda x: self.is_normal_quest_campaign(x.id) and x.value >= 6000 and self.is_level_effective_scope_in_campaign(level, x.id)) # TODO change 3000 when stop speed up
                 .select(lambda x: (db.parse_time(x.start_time), db.parse_time(x.end_time)))
                 .to_list()
               )
         h3 = (flow(self.campaign_schedule.values())
-                .where(lambda x: self.is_hard_quest_campaign(x.id) and x.value >= 3000)
+                .where(lambda x: self.is_hard_quest_campaign(x.id) and x.value >= 6000) # TODO change 3000 when stop speed up
                 .select(lambda x: (db.parse_time(x.start_time), db.parse_time(x.end_time)))
                 .to_list()
              )
@@ -1158,10 +1187,15 @@ class database():
         assert len(schedule) == 1
         return schedule[0]
 
-    def parse_time(self, time: str) -> datetime.datetime:
+    def parse_time(self, time: Union[int, str]) -> datetime.datetime:
+        try:
+            return datetime.datetime.fromtimestamp(int(time))
+        except:
+            pass
+
         for timeformat in ['%Y/%m/%d %H:%M:%S', '%Y/%m/%d %H:%M', '%Y/%m/%d', '%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y%m%d%H%M%S']:
             try:
-                return datetime.datetime.strptime(time, timeformat)
+                return datetime.datetime.strptime(str(time), timeformat)
             except:
                 pass
         raise ValueError(f"无法解析时间：{time}")
@@ -1198,6 +1232,14 @@ class database():
 
     def get_today_start_time(self) -> datetime.datetime:
         return self.get_start_time(apiclient.datetime)
+
+    def get_rarity_memory_demand(self, unit_id: int, start_rarity: int, target_rarity: int, token: ItemType) -> int:
+        return (
+            flow(self.rarity_up_required[unit_id].items())
+            .where(lambda x: x[0] > start_rarity and x[0] <= target_rarity)
+            .select(lambda x: x[1][token])
+            .sum()
+        )
 
     def get_unique_equip_material_demand(self, unit_id: int, slot_id:int, start_rank:int, target_rank: int) -> typing.Counter[ItemType]: 
         if unit_id not in db.unit_unique_equip[slot_id]:
@@ -1260,6 +1302,20 @@ class database():
         .select(lambda x: f"{x.gacha_id}: {x.gacha_name}-{x.pick_up_chara_text}") \
         .to_list()
 
+    def get_raw_ore_of_equip(self, equip: typing.Counter[ItemType]) -> typing.Counter[ItemType]:
+        ore_cnt = Counter()
+        for e, cnt in equip.items():
+            raw_ore = self.get_equip_raw_ore(e[1])
+            ore_cnt[raw_ore] += cnt
+        return ore_cnt
+
+    def get_equip_raw_ore(self, equip_id: int) -> ItemType:
+        promote_level = self.get_equip_promotion(equip_id)
+        return self.equip_promotion_to_raw_ore[promote_level] if promote_level in self.equip_promotion_to_raw_ore else (eInventoryType.Equip, equip_id)
+
+    def get_equip_promotion(self, equip_id: int):
+        return self.equip_data[equip_id].promotion_level
+
     def get_equip_max_star(self, equip_id: int):
         return max(self.equipment_enhance_data[self.equip_data[equip_id].promotion_level].keys()) if self.equip_data[equip_id].promotion_level in self.equipment_enhance_data else 0
 
@@ -1301,6 +1357,22 @@ class database():
                 .select(lambda x: x.travel_area_id)
                 .to_list()
         )
+
+    def get_shop_item_buy_total_price(self, price_group_id: int, bought_cnt: int, buy_cnt: int) -> int:
+        cost = 0
+        while buy_cnt > 0:
+            info = self.get_shop_item_price_info(price_group_id, bought_cnt)
+            cnt = buy_cnt if info.buy_count_to == -1 else min(buy_cnt, info.buy_count_to - bought_cnt)
+            cost += cnt * info.count
+            buy_cnt -= cnt
+        return cost
+
+    def get_shop_item_price_info(self, price_group_id: int, bought_cnt: int) -> ShopStaticPriceGroup:
+        buy_cnt = bought_cnt + 1
+        item = flow(self.shop_static_price_group[price_group_id]) \
+            .first(lambda x: x.buy_count_from <= buy_cnt and (buy_cnt <= x.buy_count_to or x.buy_count_to == -1)) 
+        return item
+
 
     def deck_sort_unit(self, units: List[int]):
         return sorted(units, key=lambda x: self.unit_data[x].search_area_width if x in self.unit_data else 9999)
@@ -1454,5 +1526,8 @@ class database():
             quest.travel_time_decrease_limit,
             int(max(0, power - quest.need_power) * coeff)
         )
+
+    def unlock_unit_condition_candidate(self):
+        return self.unlock_unit_condition
 
 db = database()
