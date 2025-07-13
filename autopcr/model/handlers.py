@@ -1,4 +1,5 @@
 from pydantic.class_validators import make_generic_validator
+from pydantic.fields import ModelField
 from pydantic.validators import int_validator
 from . import responses, sdkrequests
 from .common import *
@@ -17,6 +18,93 @@ class SourceIniGetMaintenanceStatusResponse(sdkrequests.SourceIniGetMaintenanceS
     async def update(self, mgr: datamgr, request):
         if self.manifest_ver:
             await mgr.try_update_database(int(self.manifest_ver))
+
+@handles
+class CaravanTopResponse(responses.CaravanTopResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.caravan_item_list:
+            for item in self.caravan_item_list:
+                mgr.update_inventory(item)
+        if self.init_reward_list:
+            for item in self.init_reward_list:
+                mgr.update_inventory(item)
+        if self.buddy_reward_list:
+            for item in self.buddy_reward_list:
+                mgr.update_inventory(item)
+        if self.minigame_retire_reward:
+            for item in self.minigame_retire_reward:
+                mgr.update_inventory(item)
+        if self.reset_reward:
+            for item in self.reset_reward:
+                mgr.update_inventory(item)
+
+@handles
+class TravelResultRoundEventResponse(responses.TravelResultRoundEventResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.current_round_result and self.current_round_result.reward_list:
+            for item in self.current_round_result.reward_list:
+                mgr.update_inventory(item)
+        if self.user_gold:
+            mgr.gold = self.user_gold
+        if self.user_jewel:
+            mgr.jewel = self.user_jewel
+
+@handles
+class CaravanCoinShopBuyResponse(responses.CaravanCoinShopBuyResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.purchase_list:
+            for item in self.purchase_list:
+                mgr.update_inventory(item)
+        if self.item_data:
+            for item in self.item_data:
+                mgr.update_inventory(item)
+
+@handles
+class CaravanDishSellResponse(responses.CaravanDishSellResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_list:
+            for item in self.reward_list:
+                mgr.update_inventory(item)
+
+@handles
+class CaravanMinigameCccFinishResponse(responses.CaravanMinigameCccFinishResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_list:
+            for item in self.reward_list:
+                mgr.update_inventory(item)
+
+@handles
+class CaravanDishUseResponse(responses.CaravanDishUseResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_list:
+            for item in self.reward_list:
+                mgr.update_inventory(item)
+        if self.sub_reward_list:
+            for item in self.sub_reward_list:
+                mgr.update_inventory(item)
+
+@handles
+class CaravanGachaBlockExecResponse(responses.CaravanGachaBlockExecResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_list:
+            for item in self.reward_list:
+                mgr.update_inventory(item)
+
+@handles
+class CaravanMoveResponse(responses.CaravanMoveResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_list:
+            for item in self.reward_list:
+                mgr.update_inventory(item)
+        if self.goal_bonus_list:
+            for item in self.goal_bonus_list:
+                mgr.update_inventory(item)
+        if self.treasure_reward_list:
+            for item in self.treasure_reward_list:
+                mgr.update_inventory(item)
+        if self.lottery_result_list:
+            for item in self.lottery_result_list:
+                mgr.update_inventory(item)
 
 @handles
 class SkillLevelUpResponse(responses.SkillLevelUpResponse):
@@ -263,6 +351,15 @@ class PresentReceiveAllResponse(responses.PresentReceiveAllResponse):
             mgr.stamina = self.stamina_info.user_stamina
             mgr.stamina_full_recovery_time = self.stamina_info.stamina_full_recovery_time
 
+@handles
+class PresentReceiveSingleResponse(responses.PresentReceiveSingleResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.rewards:
+            for item in self.rewards:
+                mgr.update_inventory(item)
+        if self.stamina_info:
+            mgr.stamina = self.stamina_info.user_stamina
+            mgr.stamina_full_recovery_time = self.stamina_info.stamina_full_recovery_time
 
 @handles
 class MissionIndexResponse(responses.MissionIndexResponse):
@@ -301,6 +398,7 @@ class LoadIndexResponse(responses.LoadIndexResponse):
         mgr.clan_like_count = self.clan_like_count
         mgr.user_my_quest = self.user_my_quest
         mgr.cf = self.cf
+        mgr.inventory = {}
         if self.item_list:
             for inv in self.item_list:
                 mgr.update_inventory(inv)
@@ -577,6 +675,20 @@ class SeasonPassMissionAcceptResponse(responses.SeasonPassMissionAcceptResponse)
                 mgr.update_inventory(reward)
 
 @handles
+class SubStoryWtsReadStoryResponse(responses.SubStoryWtsReadStoryResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_info:
+            for reward in self.reward_info:
+                mgr.update_inventory(reward)
+
+@handles
+class SubStoryBmyReadStoryResponse(responses.SubStoryBmyReadStoryResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_info:
+            for reward in self.reward_info:
+                mgr.update_inventory(reward)
+
+@handles
 class SubStorySkeConfirmResponse(responses.SubStorySkeConfirmResponse):
     async def update(self, mgr: datamgr, request):
         for sub_story in mgr.event_sub_story[10058].sub_story_info_list:
@@ -621,8 +733,22 @@ class SubStoryMmeReadStoryResponse(responses.SubStoryMmeReadStoryResponse):
             for reward in self.reward_info:
                 mgr.update_inventory(reward)
 
+
+class SubStoryWonReadStoryResponse(responses.SubStoryWonReadStoryResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_info:
+            for reward in self.reward_info:
+                mgr.update_inventory(reward)
 @handles
 class SubStoryNopReadStoryResponse(responses.SubStoryNopReadStoryResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.reward_info:
+            for reward in self.reward_info:
+                mgr.update_inventory(reward)
+
+
+@handles
+class SubStoryDvsReadStoryResponse(responses.SubStoryDvsReadStoryResponse):
     async def update(self, mgr: datamgr, request):
         if self.reward_info:
             for reward in self.reward_info:
@@ -641,6 +767,7 @@ class SubStorySvdReadStoryResponse(responses.SubStorySvdReadStoryResponse):
         if self.special_reward_list:
             for reward in self.special_reward_list:
                 mgr.update_inventory(reward)
+
 
 @handles
 class SubStoryLsvReadStoryResponse(responses.SubStoryLsvReadStoryResponse):
@@ -884,6 +1011,14 @@ class ShioriMissionAcceptResponse(responses.ShioriMissionAcceptResponse):
             mgr.stamina = self.stamina_info.user_stamina
             mgr.stamina_full_recovery_time = self.stamina_info.stamina_full_recovery_time
 
+@handles
+class GachaExchangePointResponse(responses.GachaExchangePointResponse):
+    async def update(self, mgr: datamgr, request):
+        if self.gacha_point_info:
+            mgr.gacha_point[self.gacha_point_info.exchange_id] = self.gacha_point_info
+        if self.reward_info_list:
+            for item in self.reward_info_list:
+                mgr.update_inventory(item)
 
 # 菜 就别玩
 def custom_dict(self, *args, **kwargs):
@@ -906,3 +1041,14 @@ DungeonUnit.__fields__['skill_limit_counter'].validators = [make_generic_validat
 DungeonUnit.__fields__['skill_limit_counter'].annotation = int
 DungeonUnit.__fields__['skill_limit_counter'].sub_fields = None 
 DungeonUnit.__fields__['skill_limit_counter'].shape = 1 # singleton
+
+CaravanCoinShopData.__annotations__['season_id'] = Optional[int]
+field = ModelField.infer(
+    name='season_id',
+    value=None,
+    annotation=int,
+    class_validators=None,
+    config=CaravanCoinShopData.__config__,
+)
+CaravanCoinShopData.__fields__['season_id'] = field
+setattr(CaravanCoinShopData, 'season_id', None)
