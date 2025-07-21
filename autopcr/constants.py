@@ -24,7 +24,7 @@ ROOT_DIR = os.path.join(os.path.dirname(__file__), '..')
 CACHE_DIR = os.path.join(ROOT_DIR, './cache/')
 RESULT_DIR = os.path.join(ROOT_DIR, './result/')
 DATA_DIR = os.path.join(ROOT_DIR, './data/')
-CONFIG_PATH = os.path.join(CACHE_DIR, './http_server/') 
+CONFIG_PATH = os.path.join(CACHE_DIR, './http_server/')
 OLD_CONFIG_PATH = os.path.join(ROOT_DIR, 'autopcr/http_server/config')
 CLAN_BATTLE_FORBID_PATH = os.path.join(CONFIG_PATH, 'clan_battle_forbidden.txt')
 
@@ -40,8 +40,8 @@ DEFAULT_HEADERS = {
     'BATTLE-LOGIC-VERSION': '4',
     'BUNDLE-VER': '',
     'DEVICE': '2',
-    'DEVICE-ID': '7b1703a5d9b394e24051d7a5d4818f17',
-    'DEVICE-NAME': 'OPPO PCRT00',
+    'DEVICE-ID': '8f5da2f3f23f4bc6867ae077ac91d71e',
+    'DEVICE-NAME': 'Redmi K80',
     'EXCEL-VER': '1.0.0',
     'GRAPHICS-DEVICE-NAME': 'Adreno (TM) 640',
     'IP-ADDRESS': '10.0.2.15',
