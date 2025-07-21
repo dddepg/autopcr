@@ -35,6 +35,51 @@ def GetSubStoryReader(sub_story_data: EventSubStory, client: pcrclient) -> Union
         return constructor[sub_story_data.event_id](client)
     return None
 
+@EventId(10128)
+class wtm_substory(SubStoryReader):
+
+    def title(self, sub_story_id: int) -> str:
+        return db.wtm_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_wtm_story(sub_story_id)
+
+@EventId(10122)
+class wts_substory(SubStoryReader):
+
+    def title(self, sub_story_id: int) -> str:
+        return db.wts_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_wts_story(sub_story_id)
+
+@EventId(10120)
+class bmy_substory(SubStoryReader):
+
+    def title(self, sub_story_id: int) -> str:
+        return db.bmy_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_bmy_story(sub_story_id)
+
+@EventId(10118)
+class dvs_substory(SubStoryReader):
+
+    def title(self, sub_story_id: int) -> str:
+        return db.dvs_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_dvs_story(sub_story_id)
+
+@EventId(10116)
+class won_substory(SubStoryReader):
+
+    def title(self, sub_story_id: int) -> str:
+        return db.won_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_won_story(sub_story_id)
+
 @EventId(10110)
 @EventId(10111)
 class mme_substory(SubStoryReader):

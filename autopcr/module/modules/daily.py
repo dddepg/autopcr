@@ -11,7 +11,7 @@ from ...model.enums import *
 from ...util.questutils import *
 import asyncio
 
-@description('仅开启时生效，氪体数优先级n4>n3>h3>vh3>n2>h2>vh2，禅模式指不执行体力相关的功能，仅在清日常生效，单项执行将忽略。庆典包括其倍数')
+@description('仅开启时生效，氪体数优先级n4>n3>h3>vh3>n2>h2>vh2，禅模式指不执行体力相关的功能，仅在清日常生效，单项执行将忽略。庆典包括其倍数，加速期间的所有倍数判断均x2')
 @name("全局配置")
 @default(True)
 @inttype('sweep_recover_stamina_times', "平时氪体数", 0, [i for i in range(41)])
@@ -92,12 +92,13 @@ class chara_fortune(Module):
             raise SkipError("今日已赛马")
         res = await client.draw_chara_fortune()
         self._log(f"赛马第{client.data.cf.rank}名，获得了宝石x{res.reward_list[0].received}")
+        client.data.cf = None
 
 class mission_receive(Module):
     async def do_task(self, client: pcrclient):
         missions = await client.mission_index()
         for type_id, condifion in zip([1, 2, 4], [db.is_daily_mission, db.is_stationary_mission, db.is_emblem_mission]): # 我也不知道为什么是1 2 4
-            if any(1 for mission in missions.missions if condifion(mission.mission_id) and mission.mission_status == eMissionStatusType.EnableReceive):
+            if any(1 for mission in missions.missions if condifion(mission.mission_id) and mission.mission_status == eMissionStatusType.EnableReceive) or any(1 for mission in missions.season_pack or [] if condifion(mission.mission_id) and not mission.received):
                 resp = await client.mission_receive(type_id)
                 reward = await client.serialize_reward_summary(resp.rewards)
                 self._log("领取了任务奖励，获得了:\n" + reward)
@@ -203,28 +204,28 @@ class seasonpass_reward(Module):
             else:
                 raise SkipError("没有可领取的女神祭奖励")
 
-@singlechoice("present_receive_strategy", "领取策略", "非体力", ["非体力", "全部"])
-@description('领取符合条件的所有礼物箱奖励')
+@singlechoice("present_receive_stamina_strategy", "体力", "不领取", ["所有", "有限期", "一天到期", "不领取"])
+@description('领取非体力的所有东西以及符合条件的体力')
 @name('领取礼物箱')
 @default(True)
 @tag_stamina_get
 class present_receive(Module):
     async def do_task(self, client: pcrclient):
-        if self.get_config('present_receive_strategy') == "非体力":
-            is_exclude_stamina = True
-            op = "领取了非体力物品：\n"
-        else:
-            is_exclude_stamina = False
-            op = "领取了所有物品：\n"
         received = False
         result = []
         stop = False
+        present_strategy = self.get_config('present_receive_stamina_strategy')
         while not stop:
-            present = await client.present_index()
-            for present in present.present_info_list:
+            is_exclude_stamina = False if present_strategy == "所有" else True
+            present_index = await client.present_index()
+            for present in present_index.present_info_list:
                 if not is_exclude_stamina or not (present.reward_type == eInventoryType.Stamina and present.reward_id == 93001):
                     res = await client.present_receive_all(is_exclude_stamina)
                     if not res.rewards:
+                        if not is_exclude_stamina and any(present.reward_type == eInventoryType.Stamina and present.reward_id == 93001 for present in present_index.present_info_list):
+                            self._warn("体力满了，无法领取礼物箱的体力")
+                        if any(db.is_ex_equip((present.reward_type, present.reward_id)) for present in present_index.present_info_list):
+                            self._warn("EX装备满了，无法领取礼物箱的EX装备")
                         stop = True
                     else:
                         result += res.rewards
@@ -233,11 +234,29 @@ class present_receive(Module):
             else:
                 stop = True
 
-        if not received:
-            raise SkipError(f"不存在未领取{'的非体力的' if is_exclude_stamina == True else '的'}礼物")
-        msg = await client.serialize_reward_summary(result)
-        self._log(op + msg)
+        if present_strategy != "所有" and present_strategy != "不领取":
+            stop = False
+            limit_stamina = present_strategy == "有限期"
+            while not stop:
+                present = await client.present_index()
+                for present in present.present_info_list:
+                    if present.reward_type == eInventoryType.Stamina and present.reward_id == 93001 \
+                    and present.reward_limit_flag \
+                    and (limit_stamina or present.reward_limit_time <= apiclient.time + 24 * 3600):
+                        res = await client.present_receive(present.present_id)
+                        if not res.rewards:
+                            self._warn("体力满了，无法继续领取礼物箱的体力")
+                            stop = True
+                            break
+                        else:
+                            stop = False
+                else:
+                    stop = True
 
+        if not received:
+            raise SkipError(f"不存在未领取礼物")
+        msg = await client.serialize_reward_summary(result)
+        self._log(f"领取了礼物箱，获得了:\n{msg}")
 
 @description('领取jjc和pjjc的币')
 @name('领取双场币')
@@ -252,62 +271,6 @@ class jjc_reward(Module):
         if info.reward_info.count:
             await client.receive_grand_arena_reward()
         self._log(f"pjjc币x{info.reward_info.count}")
-
-@description('仅进攻，不结算，会消耗次数')
-@name('完成每日jjc任务')
-@default(False)
-class jjc_daily(Module):
-    async def do_task(self, client: pcrclient):
-        if client.data.is_empty_deck(ePartyType.ARENA):
-            raise AbortError("未设置进攻队伍，请设置") # AUTO SET TODO
-
-        info = await client.get_arena_info()
-        if info.arena_info.battle_number != info.arena_info.max_battle_number:
-            raise SkipError("今日jjc任务已完成")
-
-        for _ in range(3):
-            if info.search_opponent: break
-            await asyncio.sleep(2)
-            info = await client.get_arena_info()
-
-        if not info.search_opponent:
-            raise AbortError("无法搜到可攻击对手，请稍后再试")
-        opponent = info.search_opponent[0]
-        await client.arena_apply(opponent.viewer_id, opponent.rank)
-        token = create_battle_start_token()
-        await client.arena_start(token, opponent.viewer_id, info.arena_info.battle_number, 1)
-        await client.logout()
-        await asyncio.sleep(2)
-        self._log(f"当前排名{info.arena_info.rank}，进攻第{opponent.rank}名的【{opponent.user_name}】")
-
-@description('仅进攻，不结算，会消耗次数')
-@name('完成每日pjjc任务')
-@default(False)
-class pjjc_daily(Module):
-    async def do_task(self, client: pcrclient):
-        if client.data.is_empty_deck(ePartyType.GRAND_ARENA_1) or \
-        client.data.is_empty_deck(ePartyType.GRAND_ARENA_2) or \
-        client.data.is_empty_deck(ePartyType.GRAND_ARENA_3):
-            raise AbortError("未设置进攻队伍，请设置") # AUTO SET TODO
-
-        info = await client.get_grand_arena_info()
-        if info.grand_arena_info.battle_number != info.grand_arena_info.max_battle_number:
-            raise SkipError("今日pjjc任务已完成")
-
-        for _ in range(3):
-            if info.search_opponent: break
-            await asyncio.sleep(2)
-            info = await client.get_grand_arena_info()
-
-        if not info.search_opponent:
-            raise AbortError("无法搜到可攻击对手，请稍后再试")
-        opponent = info.search_opponent[0]
-        await client.grand_arena_apply(opponent.viewer_id, opponent.rank)
-        token = create_battle_start_token()
-        await client.grand_arena_start(token, opponent.viewer_id, info.grand_arena_info.battle_number, 1)
-        await client.logout()
-        await asyncio.sleep(2)
-        self._log(f"当前排名{info.grand_arena_info.rank}，进攻第{opponent.rank}名的【{opponent.user_name}】")
 
 @description('展示基本信息')
 @name('基本信息')

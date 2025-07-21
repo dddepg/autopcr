@@ -3,6 +3,7 @@ from typing import Any
 from .autosweep import *
 from .box import *
 from .nologin import *
+from .caravan import *
 from .clan import *
 from .cron import *
 from .daily import *
@@ -23,6 +24,11 @@ class ModuleList:
     name: str = ""
     key: str = ""
     modules: List[Any] = field(default_factory=list)
+    hidden_in_batch: bool = False
+    hidden_in_clan: bool = False
+    hidden: bool = False
+    visible_in_clan: bool = False
+    visible_in_batch: bool = False
 
 cron_modules = ModuleList(
     '定时',
@@ -34,7 +40,9 @@ cron_modules = ModuleList(
         cron4,
         cron5,
         cron6,
-    ]
+    ],
+    hidden_in_batch=True,
+    hidden_in_clan=True,
 )
 
 daily_modules = ModuleList(
@@ -60,6 +68,7 @@ daily_modules = ModuleList(
         tower_cloister_sweep,
         smart_very_hard_sweep,
         jjc_reward,
+        xinsui7_sweep,
         xinsui6_sweep,
         xinsui5_sweep,
         xinsui4_sweep,
@@ -80,13 +89,12 @@ daily_modules = ModuleList(
 
         all_in_hatsune,
 
+        hatsune_vhboss_sweep,
         hatsune_hboss_sweep,
         hatsune_mission_accept1,
         hatsune_gacha_exchange,
         hatsune_mission_accept2,
 
-        jjc_daily,
-        pjjc_daily,
         unit_equip_enhance_up,
         unit_skill_level_up,
 
@@ -110,8 +118,48 @@ daily_modules = ModuleList(
         hatsune_sub_story_reading,
         guild_story_reading,
         unit_story_reading,
+        birthday_story_reading,
         room_upper_all,
         user_info,
+    ]
+)
+
+planning_modules = ModuleList(
+    '规划',
+    'planning',
+    [
+        get_library_import_data,
+        get_need_equip,
+        get_normal_quest_recommand,
+        get_need_memory,
+        get_need_pure_memory,
+        get_need_xinsui,
+    ],
+    hidden_in_batch=True,
+)
+
+table_modules = ModuleList(
+    '表格',
+    'table',
+    [
+        get_need_pure_memory_box,
+    ],
+    hidden=True,
+    visible_in_batch=True,
+)
+
+
+unit_modules = ModuleList(
+    '角色',
+    'unit',
+    [
+        search_unit,
+        master_shop,
+        missing_unit,
+        refresh_box,
+        unit_promote,
+        unit_memory_buy,
+        unit_set_unique_equip_growth,
     ]
 )
 
@@ -120,8 +168,12 @@ clan_modules = ModuleList(
     'clan',
     [
         unit_promote_batch,
+        unit_memory_buy_batch,
         set_my_party,
-    ]
+        get_box_table,
+    ],
+    hidden=True,
+    visible_in_clan=True,
 )
 
 danger_modules = ModuleList(
@@ -129,7 +181,9 @@ danger_modules = ModuleList(
     'danger',
     [
         gacha_start,
-    ]
+        gacha_exchange_chara,
+    ],
+    hidden_in_clan=True,
 )
 
 tool_modules = ModuleList(
@@ -138,26 +192,14 @@ tool_modules = ModuleList(
     [
         # cook_pudding,
         half_schedule,
-        search_box,
-        refresh_box,
-        remove_cb_support,
-        travel_team_view,
+        caravan_play,
+        caravan_shop_buy,
         ex_equip_info,
-        redeem_unit_swap,
-        unit_promote,
-        unit_set_unique_equip_growth,
-        missing_unit,
-        get_need_equip,
-        get_normal_quest_recommand,
-        get_need_memory,
-        get_need_pure_memory,
-        get_need_xinsui,
+        travel_team_view,
+        missing_emblem,
         get_clan_support_unit,
-        get_library_import_data,
-        jjc_back,
-        pjjc_back,
-        jjc_info,
-        pjjc_info,
-        pjjc_shuffle_team,
+        clear_my_party,
+        remove_cb_support,
+        redeem_unit_swap,
     ]
 )

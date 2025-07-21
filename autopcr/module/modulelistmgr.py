@@ -1,19 +1,23 @@
 from typing import Dict, List, Callable, Any
-from .modules import cron_modules, daily_modules, clan_modules, danger_modules, tool_modules, ModuleList, Module, CronModule
+from .modules import cron_modules, daily_modules, clan_modules, danger_modules, tool_modules, ModuleList, Module, CronModule, planning_modules, unit_modules, table_modules
 from .modulemgr import ModuleManager
 
 class ModuleListManager:
 
+    modules: Dict[str, ModuleList] = {
+        cron_modules.key: cron_modules,
+        daily_modules.key: daily_modules,
+        tool_modules.key: tool_modules,
+        unit_modules.key: unit_modules,
+        planning_modules.key: planning_modules,
+        table_modules.key: table_modules,
+        clan_modules.key: clan_modules,
+        danger_modules.key: danger_modules,
+    }
+    name_to_modules: Dict[str, Callable] = {m.__name__: m for ml in modules.values() for m in ml.modules}
+
     def __init__(self, modulemgr: ModuleManager):
         self.modulemgr = modulemgr
-        self.modules: Dict[str, ModuleList] = {
-            cron_modules.key: cron_modules,
-            daily_modules.key: daily_modules,
-            clan_modules.key: clan_modules,
-            danger_modules.key: danger_modules,
-            tool_modules.key: tool_modules,
-        }
-        self.name_to_modules: Dict[str, Callable] = {m.__name__: m for ml in self.modules.values() for m in ml.modules}
 
     @property
     def daily_modules(self) -> List[Module]:
@@ -41,10 +45,14 @@ class ModuleListManager:
         }
 
     def generate_tab(self, clan: bool = False, batch: bool = False):
-        if clan:
-            modules = [daily_modules, tool_modules, clan_modules]
-        elif batch:
-            modules = [daily_modules, tool_modules, danger_modules]
-        else:
-            modules = [cron_modules, daily_modules, tool_modules, danger_modules]
+        modules = []
+        for ml in self.modules.values():
+            if clan and ml.hidden_in_clan:
+                continue
+            if batch and ml.hidden_in_batch:
+                continue
+            if not clan and not batch and ml.hidden:
+                continue
+            if clan and ml.visible_in_clan or batch and ml.visible_in_batch or not ml.hidden:
+                modules.append(ml)
         return [{'key': m.key, 'name': m.name} for m in modules]

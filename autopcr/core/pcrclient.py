@@ -50,6 +50,10 @@ class pcrclient(apiclient):
         await self.session.clear_session()
         self.need_refresh = False
 
+    async def emblem_top(self):
+        req = EmblemTopRequest()
+        return await self.request(req)
+
     async def support_unit_get_setting(self):
         req = SupportUnitGetSettingRequest()
         return await self.request(req)
@@ -60,6 +64,85 @@ class pcrclient(apiclient):
         req.position = position
         req.action = action
         req.unit_id = unit_id
+        return await self.request(req)
+
+    async def caravan_top(self):
+        req = CaravanTopRequest()
+        req.is_first = 1
+        return await self.request(req)
+
+    async def caravan_dish_sell(self, season_id: int, block_id: int, dish_list: List[CaravanDishSellData], surplus_dish_list: List[CaravanDishSellData] = []):
+        req = CaravanDishSellRequest()
+        req.season_id = season_id
+        req.block_id = block_id
+        req.dish_list = dish_list
+        req.surplus_dish_list = surplus_dish_list
+        return await self.request(req)
+
+    async def caravan_dice_roll(self, season_id: int, current_num: int, roll_num: int):
+        req = CaravanDiceRollRequest()
+        req.season_id = season_id
+        req.current_num = current_num
+        req.roll_num = roll_num
+        return await self.request(req)
+
+    async def caravan_coin_shop_buy(self, season_id: int, shop_season_id: int, slot_id_list: List[int], current_currency_num: int):
+        req = CaravanCoinShopBuyRequest()
+        req.season_id = season_id
+        req.shop_season_id = shop_season_id
+        req.slot_id_list = slot_id_list
+        req.current_currency_num = current_currency_num
+        return await self.request(req)
+
+    async def caravan_move(self, season_id: int, current_block_id: int, block_id_list: List[int]):
+        req = CaravanMoveRequest()
+        req.season_id = season_id
+        req.current_block_id = current_block_id
+        req.block_id_list = block_id_list
+        return await self.request(req)
+
+    async def caravan_progress_turn(self, season_id: int, turn: int):
+        req = CaravanProgressTurnRequest()
+        req.season_id = season_id
+        req.turn = turn
+        return await self.request(req)
+
+    async def caravan_read(self, season_id: int, block_id: int):
+        req = CaravanReadRequest()
+        req.season_id = season_id
+        req.block_id = block_id
+        return await self.request(req)
+
+    async def caravan_shop_block_buy(self, season_id: int, block_id: int, slot_id_list: List[int], current_currency_num: int):
+        req = CaravanShopBlockBuyRequest()
+        req.season_id = season_id
+        req.block_id = block_id
+        req.slot_id_list = slot_id_list
+        req.current_currency_num = current_currency_num
+        return await self.request(req)
+
+    async def caravan_dish_use(self, season_id: int, dish_id: int):
+        req = CaravanDishUseRequest()
+        req.season_id = season_id
+        req.dish_id = dish_id
+        return await self.request(req)
+
+    async def caravan_gacha_block_exec(self, season_id: int, block_id: int, gacha_type: int, current_currency_num: int):
+        req = CaravanGachaBlockExecRequest()
+        req.season_id = season_id
+        req.block_id = block_id
+        req.gacha_type = gacha_type
+        req.current_currency_num = current_currency_num
+        return await self.request(req)
+
+    async def caravan_minigame_start(self):
+        req = CaravanMinigameCccStartRequest()
+        return await self.request(req)
+
+    async def caravan_minigame_finish(self, play_id: int, items: Dict[int, int]):
+        req = CaravanMinigameCccFinishRequest()
+        req.play_id = play_id
+        req.object_list = [CccFinishItemCountInfo(ccc_object_id=item_id, count=count) for item_id, count in items.items()]
         return await self.request(req)
 
     async def item_recycle_ex(self, consume_ex_serial_id_list: List[int]):
@@ -115,6 +198,12 @@ class pcrclient(apiclient):
         req.current_currency_num = TravelCurrentCurrencyNum(jewel = self.data.jewel.free_jewel + self.data.jewel.jewel, item = self.data.get_inventory(db.travel_speed_up_paper))
         return await self.request(req)
 
+    async def travel_result_round_event(self, round: int, select_door_id: int):
+        req = TravelResultRoundEventRequest()
+        req.round = round
+        req.select_door_id = select_door_id
+        return await self.request(req)
+
     async def travel_receive_top_event_reward(self, top_event_appear_id: int, choice_number: int):
         req = TravelReceiveTopEventRewardRequest()
         req.top_event_appear_id = top_event_appear_id
@@ -158,6 +247,9 @@ class pcrclient(apiclient):
         req.unit_id_list = unit_id_list
         return await self.request(req)
 
+    async def is_deck_empty(self, deck_number: ePartyType):
+        return all(getattr(self.data.deck_list[deck_number], f"unit_id_{i}") == 0 for i in range(1, 6))
+
     async def deck_update(self, deck_number: int, units: List[int]):
         req = DeckUpdateRequest()
         req.deck_number = deck_number
@@ -178,6 +270,9 @@ class pcrclient(apiclient):
         req.tab_number = tab_number
         req.tab_name = tab_name
         return await self.request(req)
+
+    async def clear_my_party(self, tab_number: int, party_number: int):
+        return await self.set_my_party(tab_number, party_number, 0, f"队伍{party_number}", [], [])
 
     async def set_my_party(self, tab_number: int, party_number: int, party_label_type: int, party_name: str, units: List[int], change_rarity_unit_list: List[ChangeRarityUnit]):
         req = SetMyPartyRequest()
@@ -372,6 +467,13 @@ class pcrclient(apiclient):
         req.item_info = [SendGiftData(item_id=item[1], item_num=cnt, current_item_num=self.data.get_inventory(item)) for item, cnt in cakes.items()]
         return await self.request(req)
 
+    async def gacha_exchange_point(self, exchange_id: int, unit_id: int, current_point: int):
+        req = GachaExchangePointRequest()
+        req.exchange_id = exchange_id
+        req.unit_id = unit_id
+        req.current_point = current_point
+        return await self.request(req)
+
     async def gacha_special_fes(self):
         req = GachaSpecialFesIndexRequest()
         return await self.request(req)
@@ -390,6 +492,12 @@ class pcrclient(apiclient):
         req.item_id = item_id
         return await self.request(req)
 
+    async def gacha_select_pickup(self, gacha_id: int, priority_list: List[int]):
+        req = GachaSelectPickupRequest()
+        req.gacha_id = gacha_id
+        req.priority_list = priority_list
+        return await self.request(req)
+
     async def draw_from_bank(self, current_bank_gold: int, draw_gold: int):
         req = ShopWithdrawGoldFromBankRequest()
         req.current_bank_gold = current_bank_gold
@@ -405,13 +513,16 @@ class pcrclient(apiclient):
         else:
             return False
 
-    async def exec_gacha_aware(self, target_gacha: GachaParameter, gacha_times: int, draw_type: eGachaDrawType, current_cost_num: int, campaign_id: int) -> GachaReward:
+    async def exec_gacha_aware(self, target_gacha: GachaParameter, gacha_times: int, draw_type: eGachaDrawType, current_cost_num: int, campaign_id: int, auto_select_pickup: bool = True) -> GachaReward:
 
         if draw_type == eGachaDrawType.Payment and current_cost_num < 1500:
             raise AbortError(f"宝石{current_cost_num}不足1500")
 
         if draw_type == eGachaDrawType.Ticket and current_cost_num < 1:
             raise AbortError(f"单抽券{current_cost_num}不足")
+
+        if draw_type == eGachaDrawType.Temp_Ticket_10 and current_cost_num < 1:
+            raise AbortError(f"限定十连券{current_cost_num}不足")
 
         if target_gacha.selected_item_id == 0:
             prizegacha_id = db.gacha_data[target_gacha.id].prizegacha_id
@@ -421,13 +532,23 @@ class pcrclient(apiclient):
                 prize_memory = sorted(prize_memory, key = lambda x: -piece_demand.get(x, 0))
             item_id = prize_memory[0]
             await self.gacha_select_prize(prizegacha_id, item_id[1])
-        if target_gacha.select_pickup_slot_num == 0:
-            raise AbortError("未选择up角色")
+            target_gacha.selected_item_id = item_id[1]
+        if target_gacha.select_pickup_slot_num is not None:
+            pickup_id = db.gacha_data[target_gacha.id].pickup_id
+            if target_gacha.select_pickup_slot_num == len(target_gacha.priority_list) and all(db.gacha_pickup[pickup_id][u].reward_id not in self.data.unit for u in target_gacha.priority_list):
+                pass
+            elif auto_select_pickup or target_gacha.select_pickup_slot_num > len(target_gacha.priority_list):
+                pickup_units = [u for u in db.gacha_pickup[pickup_id].values()]
+                pickup_units.sort(key = lambda x: (x.reward_id not in self.data.unit, -x.reward_id), reverse = True)
+                pickup_units = pickup_units[:target_gacha.select_pickup_slot_num]
+                pickup_units = [u.priority for u in pickup_units]
+                if set(pickup_units) != set(target_gacha.priority_list):
+                    await self.gacha_select_pickup(target_gacha.id, pickup_units)
+                    target_gacha.priority_list = pickup_units
 
         if target_gacha.exchange_id in self.data.gacha_point and  \
         self.data.gacha_point[target_gacha.exchange_id].current_point >= self.data.gacha_point[target_gacha.exchange_id].max_point:
             raise AbortError(f"已达到天井{self.data.gacha_point[target_gacha.exchange_id].current_point}pt，请上号兑换角色") 
-            # auto exchange TODO
 
         if draw_type == eGachaDrawType.Payment: # 怎么回传没有宝石数
             tot = 1500
@@ -439,6 +560,9 @@ class pcrclient(apiclient):
                 self.data.jewel.jewel -= tot
         elif draw_type == eGachaDrawType.Ticket:
             self.data.set_inventory(db.gacha_single_ticket, current_cost_num - 1)
+        elif draw_type == eGachaDrawType.Temp_Ticket_10:
+            ticket = next((eInventoryType.Item, temp_ticket) for temp_ticket in db.get_gacha_temp_ticket() if self.data.get_inventory((eInventoryType.Item, temp_ticket)))
+            self.data.set_inventory(ticket, current_cost_num - 1)
 
         resp = await self.exec_gacha(target_gacha.id, gacha_times, target_gacha.exchange_id, draw_type, current_cost_num, campaign_id)
 
@@ -484,6 +608,21 @@ class pcrclient(apiclient):
     async def read_story(self, story_id: int):
         await self.story_check(story_id)
         return await self.story_view(story_id)
+
+    async def read_wtm_story(self, sub_story_id: int):
+        req = SubStoryWtmReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        await self.request(req)
+
+    async def read_wts_story(self, sub_story_id: int):
+        req = SubStoryWtsReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        await self.request(req)
+
+    async def read_bmy_story(self, sub_story_id: int):
+        req = SubStoryBmyReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        await self.request(req)
 
     async def put_mme_piece(self, sub_story_id: int):
         req = SubStoryMmePutPieceRequest()
@@ -540,6 +679,16 @@ class pcrclient(apiclient):
         req.sub_story_id = sub_story_id
         await self.request(req)
 
+    async def read_dvs_story(self, sub_story_id: int):
+        req = SubStoryDvsReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        await self.request(req)
+
+    async def read_won_story(self, sub_story_id: int):
+        req = SubStoryWonReadStoryRequest()
+        req.sub_story_id_list = [sub_story_id]
+        await self.request(req)
+
     async def confirm_ske_story(self):
         req = SubStorySkeConfirmRequest()
         await self.request(req)
@@ -579,7 +728,23 @@ class pcrclient(apiclient):
         req = ShopItemListRequest()
         return await self.request(req)
 
-    async def shop_buy_item(self, shop_id, bought_list):
+    async def shop_buy(self, shop_id: int, slot_id: int, number: int, total_price: int):
+        req = ShopBuyRequest()
+        req.system_id = shop_id
+        req.slot_id = slot_id
+        req.number = number
+        req.current_currency_num = self.data.get_shop_gold(shop_id)
+        req.total_price = total_price
+        return await self.request(req)
+
+    async def shop_buy_bulk(self, shop_id, bought: typing.Counter[int]): 
+        req = ShopBuyBulkRequest()
+        req.system_id = shop_id
+        req.buy_item_list = [BuyBulkBuyItemList(slot_id = item, count = cnt) for item, cnt in bought.items()]
+        req.current_currency_num = self.data.get_shop_gold(shop_id)
+        return await self.request(req)
+
+    async def shop_buy_item(self, shop_id, bought_list: List[int]):
         req = ShopBuyMultipleRequest()
         req.system_id = shop_id
         req.slot_ids = bought_list
@@ -600,6 +765,8 @@ class pcrclient(apiclient):
         return await self.request(req)
 
     async def get_tower_top(self):
+        if not self.data.is_quest_cleared(11009001):
+            raise SkipError("未解锁露娜塔")
         req = TowerTopRequest()
         req.is_first = 1
         req.return_cleared_ex_quest = 0
@@ -608,7 +775,7 @@ class pcrclient(apiclient):
     async def tower_cloister_battle_skip(self, times: int):
         req = CloisterBattleSkipRequest()
         req.skip_count = times
-        req.quest_id = db.tower_area[self.data.tower_status.cleared_floor_num].cloister_quest_id # TODO
+        req.quest_id = db.tower_area[self.data.tower_status.cleared_floor_num].cloister_quest_id
         req.current_ticket_num = self.data.get_inventory((eInventoryType.Item, 23001))
         return await self.request(req)
 
@@ -690,7 +857,12 @@ class pcrclient(apiclient):
         req = HatsuneQuestTopRequest()
         req.event_id = event
         return await self.request(req)
-    
+
+    async def present_receive(self, present_id: int):
+        req = PresentReceiveSingleRequest()
+        req.present_id = present_id
+        return await self.request(req)
+
     async def present_receive_all(self, is_exclude_stamina: bool):
         req = PresentReceiveAllRequest()
         req.time_filter = -1
@@ -927,7 +1099,7 @@ class pcrclient(apiclient):
 
     async def serlize_reward(self, reward_list: List[InventoryInfo], target: Union[ItemType, None] = None, filter: Union[None, Callable[[ItemType],bool]] = None): # 无用 
         rewards = {}
-        for reward in reward_list:
+        for reward in reward_list or []:
             if target and (reward.type == target[0] and reward.id == target[1]) or filter and filter((reward.type, reward.id)) or not target and not filter:
                 if (reward.id, reward.type) not in rewards:
                     rewards[(reward.id, reward.type)] = [reward.count, reward.stock, reward]
@@ -1018,6 +1190,7 @@ class pcrclient(apiclient):
         return (
             (quest == 0) or
             (quest in self.data.quest_dict and self.data.quest_dict[quest].clear_flg > 0) or 
+            (quest in self.data.cleared_byway_quest_id_set) or
             (quest in db.tower_quest and self.data.tower_status and self.data.tower_status.cleared_floor_num >= db.tower_quest[quest].floor_num)
         )
 

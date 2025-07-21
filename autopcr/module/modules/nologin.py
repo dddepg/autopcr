@@ -44,7 +44,7 @@ class GachaDatum(ISchedule):
 
     @property
     def enabled(self) -> bool:
-        return super().enabled and self.gacha_id // 10000 > 2
+        return super().enabled and self.gacha_id // 10000 > 2 and self.gacha_id // 10000 < 10
 
     def get_description(self) -> str:
         if self.exchange_id != 0:
@@ -93,10 +93,15 @@ class CampaignSchedule(ISchedule):
         PLAYER_EXP_AMOUNT = "玩家经验值"
         MASTER_COIN_DROP = "大师币"
 
-    def __init__(self, campaign_category: int, value: int, *args, **kwargs):
+    def __init__(self, id :int, campaign_category: int, value: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.id = id
         self.campaign_category = campaign_category
         self.value = value
+
+    @property
+    def enabled(self) -> bool:
+        return super().enabled and db.campaign_schedule[self.id].lv_to == -1
 
     def get_description(self) -> str:
         cat = eCampaignCategory(self.campaign_category).name.split('_')
@@ -138,6 +143,18 @@ class TowerSchedule(ISchedule):
 class TdfSchedule(ISchedule):
     description = "次元断层"
 
+class ColosseumScheduleData(ISchedule):
+    description = "斗技场"
+
+class CaravanSchedule(ISchedule):
+    description = "驾车游"
+    def __init__(self, season_id: int, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.season_id = season_id
+
+    def get_description(self) -> str:
+        return f"驾车游第{self.season_id}季"
+
 class CharaFortuneSchedule(ISchedule):
     def __init__(self, name: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -165,13 +182,15 @@ class half_schedule(Module):
         (db.secret_dungeon_schedule, lambda x: SecretDungeonSchedule(x.start_time, x.end_time, "特别地下城")),
         (db.seasonpass_foundation, lambda x: SeasonpassFoundation(x.name, x.start_time, x.end_time, "季卡")),
         (db.gacha_data, lambda x: GachaDatum(x.gacha_id, x.exchange_id, x.start_time, x.end_time, "扭蛋")),
-        (db.campaign_schedule, lambda x: CampaignSchedule(x.campaign_category, x.value, x.start_time, x.end_time, "庆典")),
+        (db.campaign_schedule, lambda x: CampaignSchedule(x.id, x.campaign_category, x.value, x.start_time, x.end_time, "庆典")),
         (db.campaign_free_gacha, lambda x: CampaignFreegacha(x.campaign_id, x.start_time, x.end_time, "免费十连")),
         (db.hatsune_schedule, lambda x: HatsuneSchedule(x.event_id, x.start_time, x.end_time, "活动")),
         (db.tower_schedule, lambda x: TowerSchedule(x.start_time, x.end_time, "露娜塔")),
         (db.tdf_schedule, lambda x: TdfSchedule(x.start_time, x.end_time, "次元断层")),
         (db.chara_fortune_schedule, lambda x: CharaFortuneSchedule(x.name, x.start_time, x.end_time, "赛马")),
         (db.login_bonus_data, lambda x: LoginBonusDatum(x.name, x.start_time, x.end_time, "登录奖励")),
+        (db.colosseum_schedule_data, lambda x: ColosseumScheduleData(x.start_time, x.end_time, "斗技场")),
+        (db.caravan_schedule, lambda x: CaravanSchedule(x.season_id, x.start_time, x.end_time, "驾车游")),
     ]
     async def do_task(self, _: pcrclient):
         schedules = defaultdict(list)

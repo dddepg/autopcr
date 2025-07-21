@@ -46,7 +46,8 @@ sv_help = f"""
 - {prefix}日常记录 查看清日常状态
 - {prefix}日常报告 [0|1|2|3] 最近四次清日常报告
 - {prefix}定时日志 查看定时运行状态
-- {prefix}查box [昵称] 查看角色练度
+- {prefix}查角色 [昵称] 查看角色练度
+- {prefix}查缺称号 查看缺少的称号
 - {prefix}查缺角色 查看缺少的限定常驻角色
 - {prefix}查ex装备 [会战] 查看ex装备库存
 - {prefix}查探险编队 根据记忆碎片角色编队战力相当的队伍
@@ -58,6 +59,8 @@ sv_help = f"""
 - {prefix}刷图推荐 [<rank>] [fav] 查询缺口装备的刷图推荐，格式同上
 - {prefix}公会支援 查询公会支援角色配置
 - {prefix}卡池 查看当前卡池
+- {prefix}编队 1 1 春妈 蝶妈 狗妈 水妈 礼妈 便捷设置编队
+- {prefix}免费十连 <卡池id> 卡池id来自【{prefix}卡池】
 - {prefix}来发十连 <卡池id> [抽到出] [单抽券] [开抽] 赛博抽卡，谨慎使用。卡池id来自【{prefix}卡池】，[抽到出]表示抽到出货或达天井，[单抽券]表示仅用厕纸，[开抽]表示确认抽卡。已有up也可再次触发。
 """.strip()
 
@@ -604,7 +607,11 @@ async def tool_used(botev: BotEvent, tool: ToolInfo, config: Dict[str, str], acc
         is_admin_call = await botev.is_admin()
         resp = await acc.do_from_key(config, tool.key, is_admin_call)
         if isinstance(resp, List):
-            resp = resp[0]
+            if resp:
+                resp = resp[0]
+            else:
+                await botev.send("未选择账号！请到网页端批量运行选择账号后运行")
+                return
         resp = resp.get_result()
         img = await drawer.draw_task_result(resp)
         msg = f"{alias}"
@@ -617,7 +624,7 @@ async def tool_used(botev: BotEvent, tool: ToolInfo, config: Dict[str, str], acc
 @sv.on_fullmatch(f"{prefix}卡池")
 @wrap_hoshino_event
 async def gacha_current(botev: BotEvent):
-    msg = '\n'.join(db.get_cur_gacha())
+    msg = '\n'.join(db.get_mirai_gacha())
     await botev.finish(msg)
 
 def is_args_exist(msg: List[str], key: str):
@@ -633,74 +640,6 @@ async def clan_support(botev: BotEvent):
 @register_tool("查心碎", "get_need_xinsui")
 async def find_xinsui(botev: BotEvent):
     return {}
-
-@register_tool("jjc回刺", "jjc_back")
-async def jjc_back(botev: BotEvent):
-    msg = await botev.message()
-    opponent_jjc_rank = -1
-    opponent_jjc_attack_team_id = 1
-    try:
-        opponent_jjc_rank = int(msg[0])
-        del msg[0]
-    except:
-        pass
-    try:
-        opponent_jjc_attack_team_id = int(msg[0])
-        del msg[0]
-    except:
-        pass
-    config = {
-        "opponent_jjc_rank": opponent_jjc_rank,
-        "opponent_jjc_attack_team_id": opponent_jjc_attack_team_id,
-    }
-    return config
-
-@register_tool("pjjc回刺", "pjjc_back")
-async def pjjc_back(botev: BotEvent):
-    msg = await botev.message()
-    opponent_pjjc_rank = -1
-    opponent_pjjc_attack_team_id = 1
-    try:
-        opponent_pjjc_rank = int(msg[0])
-        del msg[0]
-    except:
-        pass
-    try:
-        opponent_pjjc_attack_team_id = int(msg[0])
-        del msg[0]
-    except:
-        pass
-    config = {
-        "opponent_pjjc_rank": opponent_pjjc_rank,
-        "opponent_pjjc_attack_team_id": opponent_pjjc_attack_team_id,
-    }
-    return config
-
-@register_tool("jjc透视", "jjc_info")
-async def jjc_info(botev: BotEvent):
-    use_cache = True
-    msg = await botev.message()
-    try:
-        use_cache = not is_args_exist(msg, 'flush')
-    except:
-        pass
-    config = {
-        "jjc_info_cache": use_cache,
-    }
-    return config
-
-@register_tool("pjjc透视", "pjjc_info")
-async def pjjc_info(botev: BotEvent):
-    use_cache = True
-    msg = await botev.message()
-    try:
-        use_cache = not is_args_exist(msg, 'flush')
-    except:
-        pass
-    config = {
-        "pjjc_info_cache": use_cache,
-    }
-    return config
 
 @register_tool("查记忆碎片", "get_need_memory")
 async def find_memory(botev: BotEvent):
@@ -819,15 +758,15 @@ async def quest_recommand(botev: BotEvent):
     return config
 
 
-@register_tool("pjjc换防", "pjjc_shuffle_team")
-async def pjjc_shuffle_team(botev: BotEvent):
-    return {}
-
 @register_tool("查缺角色", "missing_unit")
 async def find_missing_unit(botev: BotEvent):
     return {}
 
-@register_tool("查box", "search_box")
+@register_tool("查缺称号", "missing_emblem")
+async def find_missing_emblem(botev: BotEvent):
+    return {}
+
+@register_tool("查角色", "search_unit")
 async def search_box(botev: BotEvent):
     msg = await botev.message()
     unit = None
@@ -841,9 +780,8 @@ async def search_box(botev: BotEvent):
 
     if unit:
         unit = unit * 100 + 1;
-        unit_name = db.get_unit_name(unit)
         return {
-            "search_box_id": f"{unit}:{unit_name}"
+            "search_unit_id": unit
         }
     else:
         await botev.finish(f"未知昵称{unit_name}")
@@ -885,6 +823,65 @@ async def redeem_unit_swap(botev: BotEvent):
 @register_tool("半月刊", "half_schedule")
 async def half_schedule(botev: BotEvent):
     return {}
+
+@register_tool("免费十连", "free_gacha")
+async def free_gacha(botev: BotEvent):
+    msg = await botev.message()
+    gacha_id = 0
+    try:
+        gacha_id = int(msg[0])
+        del msg[0]
+    except:
+        pass
+    config = {
+        "free_gacha_select_ids": [gacha_id],
+        "today_end_gacha_no_do": False,
+    }
+    return config
+
+
+@register_tool("编队", "set_my_party")
+async def set_my_party(botev: BotEvent):
+    msg = await botev.message()
+    party_start_num = 1
+    tab_start_num = 1
+    set_my_party_text = "自定义编队\n"
+    try:
+        tab_start_num = int(msg[0])
+        del msg[0]
+    except:
+        pass
+    try:
+        party_start_num = int(msg[0])
+        del msg[0]
+    except:
+        pass
+    units = []
+    unknown_units = []
+    for _ in range(5):
+        try:
+            unit_name = msg[0]
+            unit = get_id_from_name(unit_name)
+            if unit:
+                units.append(unit)
+            else:
+                unknown_units.append(unit_name)
+            del msg[0]
+        except:
+            pass
+    if unknown_units:
+        await botev.finish(f"未知昵称{', '.join(unknown_units)}")
+    if not units:
+        await botev.finish("未指定任何角色")
+    if len(units) < 5:
+        await botev.finish("需要5个角色")
+    set_my_party_text += "\n".join(f"{unit * 100 + 1}\t{db.get_unit_name(unit*100+1)}\t1\t{6 if unit*100+1 in db.unit_to_pure_memory else 5}" for unit in units)
+    config = {
+        "tab_start_num": tab_start_num,
+        "party_start_num": party_start_num,
+        "set_my_party_text": set_my_party_text,
+    }
+    return config
 
 # @register_tool("获取导入", "get_library_import_data")
 # async def get_library_import(botev: BotEvent):

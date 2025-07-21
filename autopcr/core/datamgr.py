@@ -57,8 +57,11 @@ class datamgr(BaseModel, Component[apiclient]):
     user_gold_bank_info: UserBankGoldInfo = None
     ex_equips: Dict[int, ExtraEquipInfo] = {}
     user_redeem_unit: Dict[int, RedeemUnitInfo] = {}
+    cleared_byway_quest_id_set: Set[int] = set({})
     return_fes_info_list: List[ReturnFesInfo] = None
     data_time: int = 0
+    version: int = 0
+    caravan_dishes: typing.Counter[int] = Counter()
 
     @staticmethod
     async def try_update_database(ver: int):
@@ -76,25 +79,25 @@ class datamgr(BaseModel, Component[apiclient]):
         self.stamina = max_stamina - remain
 
     def is_heart_piece_campaign(self) -> bool:
-        return self.get_campaign_times(db.is_heart_piece_campaign) > 0
+        return self.get_heart_piece_campaign_times() > 1
 
     def is_star_cup_campaign(self) -> bool:
-        return self.get_campaign_times(db.is_star_cup_campaign) > 0
+        return self.get_star_cup_campaign_times() > 1
 
     def is_quest_campaign(self) -> bool:
         return self.is_normal_quest_campaign() or self.is_hard_quest_campaign() or self.is_very_hard_quest_campaign()
 
     def is_normal_quest_campaign(self) -> bool:
-        return self.get_campaign_times(db.is_normal_quest_campaign) > 0
+        return self.get_normal_quest_campaign_times() > 1
 
     def is_hard_quest_campaign(self) -> bool:
-        return self.get_campaign_times(db.is_hard_quest_campaign) > 0
+        return self.get_hard_quest_campaign_times() > 1
 
     def is_very_hard_quest_campaign(self) -> bool:
-        return self.get_campaign_times(db.is_very_hard_quest_campaign) > 0
+        return self.get_very_hard_quest_campaign_times() > 1
 
     def is_dungeon_mana_campaign(self) -> bool:
-        return self.get_campaign_times(db.is_dungeon_mana_campaign) > 0
+        return self.get_dungeon_mana_campaign_times() > 1
 
     def is_campaign(self, campaign: str) -> bool:
         campaign_list = {
@@ -120,7 +123,8 @@ class datamgr(BaseModel, Component[apiclient]):
         if not times:
             return 0
         times = max(times)
-        return int(times)
+        # return int(times)
+        return int(times) // 2 # TODO delete // 2 when stop speed up
 
     def get_heart_piece_campaign_times(self) -> int:
         return self.get_campaign_times(db.is_heart_piece_campaign) // 1000
@@ -156,9 +160,9 @@ class datamgr(BaseModel, Component[apiclient]):
             and db.is_quest_effective_scope_in_campaign(quest, campaign_id)
         return self.get_campaign_times(func)
 
-    def get_unique_equip_material_demand(self, equip_slot:int, unit_id: int, token: ItemType) -> int:
+    def get_unique_equip_material_demand(self, equip_slot:int, unit_id: int, token: ItemType, target_rank: int = -1) -> int:
         start_rank = self.unit[unit_id].unique_equip_slot[0].rank if unit_id in self.unit and self.unit[unit_id].unique_equip_slot else 0
-        demand = db.get_unique_equip_material_demand(unit_id, equip_slot, start_rank, db.unique_equipment_max_rank[equip_slot])
+        demand = db.get_unique_equip_material_demand(unit_id, equip_slot, start_rank, db.unique_equipment_max_rank[equip_slot] if target_rank == -1 else target_rank)
         return demand.get(token, 0)
 
     def get_unit_eqiup_demand(self, unit_id: int) -> typing.Counter[ItemType]:
@@ -177,19 +181,14 @@ class datamgr(BaseModel, Component[apiclient]):
             return 0
         return db.exceed_level_unit_required[unit_id].consume_num_1 # 1 memory 2 ring
 
-    def get_rarity_memory_demand(self, unit_id: int, token: ItemType, rarity_slot_num: int) -> int:
+    def get_rarity_memory_demand(self, unit_id: int, token: ItemType, rarity_slot_num: int, target_rarity: int = 999) -> int:
         rarity = -1
         if unit_id in self.unit:
             unit_data = self.unit[unit_id]
             rarity = unit_data.unit_rarity
             if unit_data.unlock_rarity_6_item and getattr(unit_data.unlock_rarity_6_item, f"slot_{rarity_slot_num}"):
                 rarity = 6
-        return (
-            flow(db.rarity_up_required[unit_id].items())
-            .where(lambda x: x[0] > rarity)
-            .select(lambda x: x[1][token])
-            .sum()
-        )
+        return db.get_rarity_memory_demand(unit_id, rarity, target_rarity, token)
 
     def get_library_unit_data(self) -> List:
         result = []
@@ -293,6 +292,12 @@ class datamgr(BaseModel, Component[apiclient]):
         gap = self.get_demand_gap(demand, lambda x: db.is_equip(x, uncraftable_only=True))
         return gap
 
+    def get_unit_memory_demand(self, unit_id: int, target_rarity: int = 999, target_unique_rank: int = -1, exceed_level: bool = True) -> int:
+        memory_id = db.unit_to_memory[unit_id]
+        token = (eInventoryType.Item, memory_id)
+        need = self.get_rarity_memory_demand(unit_id, token, 2, target_rarity) + self.get_unique_equip_memory_demand(unit_id, token, target_unique_rank) + self.get_exceed_level_unit_demand(unit_id, token) * exceed_level
+        return need
+
     def get_memory_demand(self) -> typing.Counter[ItemType]:
         result: typing.Counter[ItemType] = Counter()
         for memory_id, unit_id in db.memory_to_unit.items():
@@ -300,7 +305,7 @@ class datamgr(BaseModel, Component[apiclient]):
             if token not in db.inventory_name or unit_id not in db.unit_data: # 未来角色
                 continue
 
-            need = self.get_rarity_memory_demand(unit_id, token, 2) + self.get_unique_equip_memory_demand(unit_id, token) + self.get_exceed_level_unit_demand(unit_id, token)
+            need = self.get_unit_memory_demand(unit_id)
             result[token] += need
 
         return result
@@ -358,8 +363,8 @@ class datamgr(BaseModel, Component[apiclient]):
                 result.append((token, need))
         return result, cnt 
 
-    def get_unique_equip_memory_demand(self, unit_id: int, token: ItemType) -> int:
-        return self.get_unique_equip_material_demand(1, unit_id, token)
+    def get_unique_equip_memory_demand(self, unit_id: int, token: ItemType, target_rank: int = -1) -> int:
+        return self.get_unique_equip_material_demand(1, unit_id, token, target_rank)
 
     def get_max_quest(self, quests: Dict[int, TrainingQuestDatum], sweep_available = False) -> int:
         now = apiclient.datetime
@@ -413,8 +418,10 @@ class datamgr(BaseModel, Component[apiclient]):
                 self.unit_love_data[unit_id].chara_id = unit_id
                 self.unit_love_data[unit_id].chara_love = 0
                 self.unit_love_data[unit_id].love_level = 0
-        elif item.type == eInventoryType.ExtraEquip:
+        elif item.type == eInventoryType.ExtraEquip and item.ex_equip:
             self.ex_equips[item.ex_equip.serial_id] = item.ex_equip
+        elif item.type == eInventoryType.CaravanDish:
+            self.caravan_dishes[item.id] = item.stock
         else:
             self.inventory[token] = item.stock
 
@@ -436,7 +443,12 @@ class datamgr(BaseModel, Component[apiclient]):
         return [item for item in self.inventory if filter(item) and self.inventory[item] > 0]
 
     def get_inventory(self, item: ItemType) -> int:
-        return self.inventory.get(item, 0)
+        if item == db.mana:
+            return self.gold.gold_id_free + self.gold.gold_id_pay
+        elif item == db.jewel:
+            return self.jewel.free_jewel + self.jewel.jewel
+        else:
+            return self.inventory.get(item, 0)
 
     def set_inventory(self, item: ItemType, value: int):
         self.inventory[item] = value
@@ -460,6 +472,12 @@ class datamgr(BaseModel, Component[apiclient]):
             return self.get_inventory((eInventoryType.Item, 90007))
         elif shop_id == eSystemId.COUNTER_STOP_SHOP: # 大师店
             return self.get_inventory((eInventoryType.Item, 90008))
+        elif shop_id == eSystemId.EX_EQUIPMENT_WEAPON_SHOP: # EX武器店
+            return self.get_inventory((eInventoryType.Item, 90009))
+        elif shop_id == eSystemId.EX_EQUIPMENT_ARMOR_SHOP: # EX防具店
+            return self.get_inventory((eInventoryType.Item, 90010))
+        elif shop_id == eSystemId.EX_EQUIPMENT_ACCESSORY_SHOP: # EX饰品店
+            return self.get_inventory((eInventoryType.Item, 90011))
         else:
             raise ValueError(f"未知的商店{shop_id}")
 
@@ -475,8 +493,8 @@ class datamgr(BaseModel, Component[apiclient]):
                    db.daily_mission_data[x.mission_id].system_id == system_id)
         )) != 0
 
-    def get_not_enough_item(self, demand: typing.Counter[ItemType]) -> List[Tuple[ItemType, int]]:
-        bad = [(item, cnt - self.get_inventory(item)) for item, cnt in demand.items() if cnt > self.get_inventory(item)]
+    def get_not_enough_item(self, demand: typing.Counter[ItemType]) -> typing.Counter[ItemType]:
+        bad = Counter({item: cnt - self.get_inventory(item) for item, cnt in demand.items() if cnt > self.get_inventory(item)})
         return bad
 
     def get_unit_power(self, unit_id: int) -> int:

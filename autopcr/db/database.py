@@ -1,4 +1,3 @@
-import time
 from typing import List, Dict, Set, Tuple, Union
 import typing
 from ..model.enums import eCampaignCategory
@@ -13,6 +12,36 @@ from ..util.linq import flow
 from queue import SimpleQueue
 from .constdata import extra_drops
 from ..core.apiclient import apiclient
+from typing import TypeVar, Generic
+from ..util.pcr_data import CHARA_NICKNAME
+
+T = TypeVar("T")
+
+class lazy_property(Generic[T]):
+    def __init__(self, func):
+        self.func = func
+        self.attr_name = f"__cached_{func.__name__}"
+        self.version_attr = f"__cached_version_{func.__name__}"
+        self.__doc__ = func.__doc__
+
+    def __get__(self, instance, owner) -> T:
+        if instance is None:
+            return self # type: ignore
+
+        dbmgr = getattr(instance, "dbmgr", None)
+        if dbmgr is None:
+            raise ValueError("数据库未初始化完成，请稍等片刻")
+        current_version = dbmgr.ver
+        cached = getattr(instance, self.attr_name, None)
+        cached_version = getattr(instance, self.version_attr, None)
+
+        if cached is None or current_version != cached_version:
+            value = self.func(instance)  # 现在函数里自己处理 db
+            setattr(instance, self.attr_name, value)
+            setattr(instance, self.version_attr, current_version)
+            return value
+
+        return cached
 
 class database():
     heart: ItemType = (eInventoryType.Equip, 140000)
@@ -23,95 +52,202 @@ class database():
     jewel: ItemType = (eInventoryType.Jewel, 91002)
     travel_speed_up_paper: ItemType = (eInventoryType.Item, 23002)
     gacha_single_ticket: ItemType = (eInventoryType.Item, 24001)
+    dice: ItemType = (eInventoryType.Item, 99009)
 
-    def update(self, dbmgr: dbmgr):
-        
-        with dbmgr.session() as db:
+    def update(self, dbmgr):
+        self.dbmgr = dbmgr
 
-            self.redeem_unit: Dict[int, Dict[int, RedeemUnit]] = (
+    @lazy_property
+    def redeem_unit(self) -> Dict[int, Dict[int, RedeemUnit]]:
+        with self.dbmgr.session() as db:
+            return (
                 RedeemUnit.query(db)
                 .group_by(lambda x: x.unit_id)
                 .to_dict(lambda x: x.key, lambda x: x.to_dict(lambda x: x.slot_id, lambda x: x))
             )
 
-            self.dear_story_data: Dict[int, DearStoryDatum] = (
+    @lazy_property
+    def caravan_dish(self) -> Dict[int, CaravanDish]:
+        with self.dbmgr.session() as db:
+            return (
+                CaravanDish.query(db)
+                .to_dict(lambda x: x.dish_id, lambda x: x)
+            )
+
+    @lazy_property
+    def caravan_event_effect(self) -> Dict[int, CaravanEventEffect]:
+        with self.dbmgr.session() as db:
+            return (
+                CaravanEventEffect.query(db)
+                .to_dict(lambda x: x.event_id, lambda x: x)
+            )
+
+    @lazy_property
+    def caravan_map(self) -> Dict[int, CaravanMap]:
+        with self.dbmgr.session() as db:
+            return (
+                CaravanMap.query(db)
+                .to_dict(lambda x: x.block_id, lambda x: x)
+            )
+
+    @lazy_property
+    def caravan_coin_shop_lineup(self) -> Dict[int, List[CaravanCoinShopLineup]]:
+        with self.dbmgr.session() as db:
+            return (
+                CaravanCoinShopLineup.query(db)
+                .group_by(lambda x: x.season_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_list())
+            )
+
+    @lazy_property
+    def caravan_schedule(self) -> Dict[int, CaravanSchedule]:
+        with self.dbmgr.session() as db:
+            return (
+                CaravanSchedule.query(db)
+                .to_dict(lambda x: x.season_id, lambda x: x)
+            )
+
+    @lazy_property
+    def caravan_gacha_block_lineup(self) -> Dict[int, CaravanGachaBlockLineup]:
+        with self.dbmgr.session() as db:
+            return (
+                CaravanGachaBlockLineup.query(db)
+                .to_dict(lambda x: x.group_id, lambda x: x)
+            )
+
+    @lazy_property
+    def ccc_scenario(self) -> Dict[int, List[CccScenario]]:
+        with self.dbmgr.session() as db:
+            return (
+                CccScenario.query(db)
+                .group_by(lambda x: x.ccc_scenario_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_list())
+            )
+
+    @lazy_property
+    def ccc_object(self) -> Dict[int, CccObject]:
+        with self.dbmgr.session() as db:
+            return (
+                CccObject.query(db)
+                .to_dict(lambda x: x.ccc_object_id, lambda x: x)
+            )
+
+    @lazy_property
+    def dear_story_data(self) -> Dict[int, DearStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 DearStoryDatum.query(db)
                 .to_dict(lambda x: x.value, lambda x: x)
             )
 
-            self.dear_story_detail: Dict[int, Dict[int, DearStoryDetail]] = (
+    @lazy_property
+    def dear_story_detail(self) -> Dict[int, Dict[int, DearStoryDetail]]:
+        with self.dbmgr.session() as db:
+            return (
                 DearStoryDetail.query(db)
                 .group_by(lambda x: x.story_group_id)
                 .to_dict(lambda x: x.key, lambda x: x.to_dict(
                             lambda x: x.story_id, lambda x: x))
             )
 
-            self.seasonpass_level_reward: Dict[int, SeasonpassLevelReward] = (
+    @lazy_property
+    def seasonpass_level_reward(self) -> Dict[int, SeasonpassLevelReward]:
+        with self.dbmgr.session() as db:
+            return (
                 SeasonpassLevelReward.query(db)
                 .to_dict(lambda x: x.level_id, lambda x: x)
             )
 
-            self.seasonpass_foundation: Dict[int, SeasonpassFoundation] = (
+    @lazy_property
+    def seasonpass_foundation(self) -> Dict[int, SeasonpassFoundation]:
+        with self.dbmgr.session() as db:
+            return (
                 SeasonpassFoundation.query(db)
                 .to_dict(lambda x: x.season_id, lambda x: x)
             )
 
-            self.guild_data: Dict[int, Guild] = (
+    @lazy_property
+    def guild_data(self) -> Dict[int, Guild]:
+        with self.dbmgr.session() as db:
+            return (
                 Guild.query(db)
                 .to_dict(lambda x: x.guild_id, lambda x: x)
             )
 
-            self.normal_quest_data: Dict[int, QuestDatum] = (
+    @lazy_property
+    def normal_quest_data(self) -> Dict[int, QuestDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 QuestDatum.query(db)
                 .where(lambda x: self.is_normal_quest(x.quest_id)) 
                 .to_dict(lambda x: x.quest_id, lambda x: x)
             )
 
-            self.wave_groups: Dict[int, WaveGroupDatum] = (
+    @lazy_property
+    def wave_groups(self) -> Dict[int, WaveGroupDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 WaveGroupDatum.query(db)
                 .to_dict(lambda x: x.wave_group_id, lambda x: x)
             )
 
-            self.reward_groups: Dict[int, EnemyRewardDatum] = (
+    @lazy_property
+    def reward_groups(self) -> Dict[int, EnemyRewardDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 EnemyRewardDatum.query(db)
                 .to_dict(lambda x: x.drop_reward_id, lambda x: x)
             )
 
-            self.normal_quest_rewards: Dict[int, typing.Counter[ItemType]] = (
+    @lazy_property
+    def normal_quest_rewards(self) -> Dict[int, typing.Counter[ItemType]]:
+        return (
                 flow(self.normal_quest_data.values())
-                .to_dict(lambda x: x.quest_id, lambda x:
-                    flow(x.get_wave_group_ids())
-                    .where(lambda y: y != 0)
-                    .select_many(lambda y: self.wave_groups[y].get_drop_reward_ids() if y in self.wave_groups else [])
-                    .where(lambda y: y != 0)
-                    .select_many(lambda y: self.reward_groups[y].get_rewards() if y in self.reward_groups else [])
-                    .where(lambda y: y != 0 and y.reward_item[0] == eInventoryType.Equip)
-                    .select(lambda y: Counter({y.reward_item: y.reward_num * y.odds / 100.0}))
-                    .sum(seed=Counter()) + 
-                    extra_drops.get(x.quest_id // 1000, Counter())
-                )
+            .to_dict(lambda x: x.quest_id, lambda x:
+                flow(x.get_wave_group_ids())
+                .where(lambda y: y != 0)
+                .select_many(lambda y: self.wave_groups[y].get_drop_reward_ids() if y in self.wave_groups else [])
+                .where(lambda y: y != 0)
+                .select_many(lambda y: self.reward_groups[y].get_rewards() if y in self.reward_groups else [])
+                .where(lambda y: y != 0 and y.reward_item[0] == eInventoryType.Equip)
+                .select(lambda y: Counter({y.reward_item: y.reward_num * y.odds / 100.0}))
+                .sum(seed=Counter()) + 
+                extra_drops.get(x.quest_id // 1000, Counter())
             )
+        )
 
-            self.unique_equipment_data: Dict[int, UniqueEquipmentDatum] = (
+    @lazy_property
+    def unique_equipment_data(self) -> Dict[int, UniqueEquipmentDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 UniqueEquipmentDatum.query(db)
                 .to_dict(lambda x: x.equipment_id, lambda x: x)
             )
 
-            self.unique_equip_enhance_rate: Dict[int, List[UniqueEquipEnhanceRate]] = (
+    @lazy_property
+    def unique_equip_enhance_rate(self) -> Dict[int, List[UniqueEquipEnhanceRate]]:
+        with self.dbmgr.session() as db:
+            return (
                 UniqueEquipEnhanceRate.query(db)
                 .group_by(lambda x: x.equipment_id)
                 .to_dict(lambda x: x.key, lambda x: x.to_list())
             )
-            
-            self.unique_equip_rank: Dict[int, Dict[int, UniqueEquipmentEnhanceDatum]] = ( 
+        
+    @lazy_property
+    def unique_equip_rank(self) -> Dict[int, Dict[int, UniqueEquipmentEnhanceDatum]]:
+            with self.dbmgr.session() as db:
+                return ( 
                 UniqueEquipmentEnhanceDatum.query(db)
                 .group_by(lambda x: x.equip_slot)
                 .to_dict(lambda x: x.key, lambda x: x
                 .group_by(lambda x: x.rank)
                 .to_dict(lambda x: x.key, lambda x: x.max(lambda y: y.enhance_level)))
-            )
+        )
 
-            self.equip_craft: Dict[ItemType, List[Tuple[ItemType, int]]] = (
+    @lazy_property
+    def equip_craft(self) -> Dict[ItemType, List[Tuple[ItemType, int]]]:
+        with self.dbmgr.session() as db:
+            return (
                 EquipmentCraft.query(db)
                 .to_dict(lambda x: (eInventoryType.Equip, x.equipment_id), lambda x: 
                     flow(x.get_materials())
@@ -120,25 +256,37 @@ class database():
                 )
             )
 
-            self.equip_craft_mana: Dict[ItemType, int] = (
+    @lazy_property
+    def equip_craft_mana(self) -> Dict[ItemType, int]:
+        with self.dbmgr.session() as db:
+            return (
                 EquipmentCraft.query(db)
                 .to_dict(lambda x: (eInventoryType.Equip, x.equipment_id), lambda x: x.crafted_cost
                 )
             )
 
-            self.unit_status_coefficient: Dict[int, UnitStatusCoefficient] = (
+    @lazy_property
+    def unit_status_coefficient(self) -> Dict[int, UnitStatusCoefficient]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitStatusCoefficient.query(db)
                 .to_dict(lambda x: x.coefficient_id, lambda x: x)
             )
 
-            self.promote_bonus: Dict[int, Dict[int, PromotionBonus]] = (
+    @lazy_property
+    def promote_bonus(self) -> Dict[int, Dict[int, PromotionBonus]]:
+        with self.dbmgr.session() as db:
+            return (
                 PromotionBonus.query(db)
                 .group_by(lambda x: x.unit_id)
                 .to_dict(lambda x: x.key, lambda x: 
                     x.to_dict(lambda x: x.promotion_level, lambda x: x))
             )
 
-            self.unit_promotion: Dict[int, Dict[int, UnitPromotion]] = (
+    @lazy_property
+    def unit_promotion(self) -> Dict[int, Dict[int, UnitPromotion]]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitPromotion.query(db)
                 .group_by(lambda x: x.unit_id)
                 .to_dict(lambda x: x.key, lambda x:
@@ -147,7 +295,10 @@ class database():
                 )
             )
 
-            self.unit_promotion_status: Dict[int, Dict[int, UnitPromotionStatus]] = (
+    @lazy_property
+    def unit_promotion_status(self) -> Dict[int, Dict[int, UnitPromotionStatus]]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitPromotionStatus.query(db)
                 .group_by(lambda x: x.unit_id)
                 .to_dict(lambda x: x.key, lambda x:
@@ -156,7 +307,10 @@ class database():
                  )
             )
 
-            self.unit_promotion_equip_count: Dict[int, Dict[int, typing.Counter[ItemType]]] = (
+    @lazy_property
+    def unit_promotion_equip_count(self) -> Dict[int, Dict[int, typing.Counter[ItemType]]]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitPromotion.query(db)
                 .group_by(lambda x: x.unit_id)
                 .to_dict(lambda x: x.key, lambda x:
@@ -169,40 +323,68 @@ class database():
                 )
             )
 
-            self.equip_max_rank: int = max(
-                max(x.keys()) for x in self.unit_promotion.values()
-            )
+    @lazy_property
+    def equip_max_rank(self) -> int:
+        return max(
+            max(x.keys()) for x in self.unit_promotion.values()
+        )
 
-            self.equip_max_rank_equip_num: int = max(
-                len(x.get(self.equip_max_rank, {})) for x in self.unit_promotion_equip_count.values()
-            )
+    @lazy_property
+    def equip_max_rank_equip_num(self) -> int:
+        return max(
+            len(x.get(self.equip_max_rank, {})) for x in self.unit_promotion_equip_count.values()
+        )
 
-            self.equip_max_rank_equip_slot: List[bool] = [ # 简洁
-                    [False, True, False, True, False, True],
-                    [False, True, False, True, True, True],
-                    [False, True, True, True, True, True],
-            ][self.equip_max_rank_equip_num - 3]
+    @lazy_property
+    def equip_max_rank_equip_slot(self) -> List[bool]:
+        return [ # 简洁
+                [False, True, False, True, False, True],
+                [False, True, False, True, True, True],
+                [False, True, True, True, True, True],
+        ][self.equip_max_rank_equip_num - 3]
 
-            self.unique_equipment_max_rank: Dict[int, int] = {
+    @lazy_property
+    def unique_equipment_max_rank(self) -> Dict[int, int]:
+        return {
                 equip_slot: max(self.unique_equip_rank[equip_slot].keys()) for equip_slot in self.unique_equip_rank
             }
 
-            self.hatsune_schedule: Dict[int, HatsuneSchedule] = (
+    @lazy_property
+    def hatsune_boss(self) -> Dict[int, HatsuneBoss]:
+        with self.dbmgr.session() as db:
+            return (
+                HatsuneBoss.query(db)
+                .to_dict(lambda x: x.boss_id, lambda x: x)
+            )
+
+    @lazy_property
+    def hatsune_schedule(self) -> Dict[int, HatsuneSchedule]:
+        with self.dbmgr.session() as db:
+            return (
                 HatsuneSchedule.query(db)
                 .to_dict(lambda x: x.event_id, lambda x: x)
             )
 
-            self.campaign_beginner_data: Dict[int, CampaignBeginnerDatum] = (
+    @lazy_property
+    def campaign_beginner_data(self) -> Dict[int, CampaignBeginnerDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 CampaignBeginnerDatum.query(db)
                 .to_dict(lambda x: x.beginner_id, lambda x: x)
             )
 
-            self.campaign_schedule: Dict[int, CampaignSchedule] = (
+    @lazy_property
+    def campaign_schedule(self) -> Dict[int, CampaignSchedule]:
+        with self.dbmgr.session() as db:
+            return (
                 CampaignSchedule.query(db)
                 .to_dict(lambda x: x.id, lambda x: x)
             )
 
-            self.pure_memory_quest: Dict[ItemType, List[QuestDatum]] = (
+    @lazy_property
+    def pure_memory_quest(self) -> Dict[ItemType, List[QuestDatum]]:
+        with self.dbmgr.session() as db:
+            return (
                 QuestDatum.query(db)
                 .where(lambda x: self.is_very_hard_quest(x.quest_id))
                 .group_by(lambda x: x.reward_image_1)
@@ -211,7 +393,10 @@ class database():
                 )
             )
 
-            self.memory_hard_quest: Dict[ItemType, List[QuestDatum]] = (
+    @lazy_property
+    def memory_hard_quest(self) -> Dict[ItemType, List[QuestDatum]]:
+        with self.dbmgr.session() as db:
+            return (
                 QuestDatum.query(db)
                 .where(lambda x: self.is_hard_quest(x.quest_id))
                 .group_by(lambda x: x.reward_image_1)
@@ -220,7 +405,10 @@ class database():
                 )
             )
 
-            self.memory_shiori_quest: Dict[ItemType, List[ShioriQuest]] = (
+    @lazy_property
+    def memory_shiori_quest(self) -> Dict[ItemType, List[ShioriQuest]]:
+        with self.dbmgr.session() as db:
+            return (
                 ShioriQuest.query(db)
                 .where(lambda x: self.is_shiori_hard_quest(x.quest_id))
                 .group_by(lambda x: x.drop_reward_id)
@@ -229,52 +417,78 @@ class database():
                 )
             )
 
-            self.team_info: Dict[int, ExperienceTeam] = (
+    @lazy_property
+    def team_info(self) -> Dict[int, ExperienceTeam]:
+        with self.dbmgr.session() as db:
+            return (
                 ExperienceTeam.query(db)
                 .to_dict(lambda x: x.team_level, lambda x: x)
             )
 
-            self.team_max_level: int = max(self.team_info.keys()) - 1
+    @lazy_property
+    def team_max_level(self) -> int:
+        return max(self.team_info.keys()) - 1
 
-            self.unit_unique_equip: Dict[int, Dict[int, UnitUniqueEquipment]] = (
-                UnitUniqueEquipment.query(db)
-                .group_by(lambda x: x.equip_slot)
-                .to_dict(lambda x: x.key, lambda x: 
-                    x.to_dict(lambda x: x.unit_id, lambda x: x))
-            )
+    @lazy_property
+    def unit_unique_equip(self) -> Dict[int, Dict[int, UnitUniqueEquipment]]:
+        with self.dbmgr.session() as db:
+            return (
+                    UnitUniqueEquipment.query(db)
+                    .group_by(lambda x: x.equip_slot)
+                    .to_dict(lambda x: x.key, lambda x: 
+                        x.to_dict(lambda x: x.unit_id, lambda x: x))
+                )
 
-            self.unique_equipment_enhance_data: Dict[int, Dict[int, UniqueEquipmentEnhanceDatum]] = (
+    @lazy_property
+    def unique_equipment_enhance_data(self) -> Dict[int, Dict[int, UniqueEquipmentEnhanceDatum]]:
+        with self.dbmgr.session() as db:
+            return (
                 UniqueEquipmentEnhanceDatum.query(db)
                 .group_by(lambda x: x.equip_slot)
                 .to_dict(lambda x: x.key, lambda x: 
                      x.to_dict(lambda x: x.enhance_level, lambda x: x))
             )
 
-            self.unique_equipment_rank_up: Dict[int, Dict[int, UniqueEquipmentRankup]] = (
+    @lazy_property
+    def unique_equipment_rank_up(self) -> Dict[int, Dict[int, UniqueEquipmentRankup]]:
+        with self.dbmgr.session() as db:
+            return (
                 UniqueEquipmentRankup.query(db)
                 .group_by(lambda x: x.equip_id)
                 .to_dict(lambda x: x.key, lambda x: x
                     .to_dict(lambda x: x.unique_equip_rank, lambda x: x))
             )
 
-            self.unique_equipment_max_level: Dict[int, int] = {
-                equip_slot: max(self.unique_equipment_enhance_data[equip_slot].keys()) for equip_slot in self.unique_equipment_enhance_data
-            }
-            self.unique_equipment_max_level[1] = (self.team_max_level + 9) // 10 * 10 # 手动修正
+    @lazy_property
+    def unique_equipment_max_level(self) -> Dict[int, int]:
+        ret = {
+            equip_slot: max(self.unique_equipment_enhance_data[equip_slot].keys()) for equip_slot in self.unique_equipment_enhance_data
+        }
+        ret[1] = (self.team_max_level + 9) // 10 * 10 # 手动修正
+        return ret
 
-            self.exceed_level_unit_required: Dict[int, ExceedLevelUnit] = (
+    @lazy_property
+    def exceed_level_unit_required(self) -> Dict[int, ExceedLevelUnit]:
+        with self.dbmgr.session() as db:
+            return (
                 ExceedLevelUnit.query(db)
                 .to_dict(lambda x: x.unit_id, lambda x: x)
             )
 
-            self.unit_rarity: Dict[int, Dict[int, UnitRarity]] = (
+    @lazy_property
+    def unit_rarity(self) -> Dict[int, Dict[int, UnitRarity]]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitRarity.query(db)
                 .group_by(lambda x: x.unit_id)
                 .to_dict(lambda x: x.key, lambda x: x
                     .to_dict(lambda x: x.rarity, lambda x: x))
                 )
-            
-            self.rarity_up_required: Dict[int, Dict[int, typing.Counter[ItemType]]] = (
+        
+    @lazy_property
+    def rarity_up_required(self) -> Dict[int, Dict[int, typing.Counter[ItemType]]]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitRarity.query(db)
                 .select(lambda x: (
                     x.unit_id,
@@ -303,7 +517,10 @@ class database():
                 )
             )
 
-            self.unique_equip_required: Dict[int, Dict[int, typing.Counter[ItemType]]] = (
+    @lazy_property
+    def unique_equip_required(self) -> Dict[int, Dict[int, typing.Counter[ItemType]]]:
+        with self.dbmgr.session() as db:
+            return (
                 UniqueEquipmentCraft.query(db)
                 .select_many(lambda x: [(
                     x.equip_id,
@@ -352,106 +569,166 @@ class database():
                 )
             )
 
-            self.dungeon_area: Dict[int, DungeonArea] = (
+    @lazy_property
+    def dungeon_area(self) -> Dict[int, DungeonArea]:
+        with self.dbmgr.session() as db:
+            return (
                 DungeonArea.query(db)
                 .where(lambda x: self.is_dungeon_id(x.dungeon_area_id))
                 .to_dict(lambda x: x.dungeon_area_id, lambda x: x)
             )
 
-            self.secret_dungeon_area: Dict[int, DungeonArea] = (
+    @lazy_property
+    def secret_dungeon_area(self) -> Dict[int, DungeonArea]:
+        with self.dbmgr.session() as db:
+            return (
                 DungeonArea.query(db)
                 .where(lambda x: self.is_secret_dungeon_id(x.dungeon_area_id))
                 .to_dict(lambda x: x.dungeon_area_id, lambda x: x)
             )
 
-            self.secret_dungeon_schedule: Dict[int, SecretDungeonSchedule] = (
+    @lazy_property
+    def secret_dungeon_schedule(self) -> Dict[int, SecretDungeonSchedule]:
+        with self.dbmgr.session() as db:
+            return (
                 SecretDungeonSchedule.query(db)
                 .to_dict(lambda x: x.dungeon_area_id, lambda x: x)
             )
 
-            self.training_quest_exp: Dict[int, TrainingQuestDatum] = (
+    @lazy_property
+    def training_quest_exp(self) -> Dict[int, TrainingQuestDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 TrainingQuestDatum.query(db)
                 .where(lambda x: x.area_id == 21002)
                 .to_dict(lambda x: x.quest_id, lambda x: x)
             )
 
-            self.training_quest_exp: Dict[int, TrainingQuestDatum] = (
-                TrainingQuestDatum.query(db)
-                .where(lambda x: x.area_id == 21002)
-                .to_dict(lambda x: x.quest_id, lambda x: x)
-            )
-
-            self.training_quest_mana: Dict[int, TrainingQuestDatum] = (
+    @lazy_property
+    def training_quest_mana(self) -> Dict[int, TrainingQuestDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 TrainingQuestDatum.query(db)
                 .where(lambda x: x.area_id == 21001)
                 .to_dict(lambda x: x.quest_id, lambda x: x)
             )
-            
-            self.chara_fortune_schedule: Dict[int, CharaFortuneSchedule] = (
+        
+    @lazy_property
+    def chara_fortune_schedule(self) -> Dict[int, CharaFortuneSchedule]:
+        with self.dbmgr.session() as db:
+            return (
                 CharaFortuneSchedule.query(db)
                 .to_dict(lambda x: x.fortune_id, lambda x: x)
             )
 
-            self.clan_battle_period: Dict[int, ClanBattlePeriod] = (
+    @lazy_property
+    def clan_battle_period(self) -> Dict[int, ClanBattlePeriod]:
+        with self.dbmgr.session() as db:
+            return (
                 ClanBattlePeriod.query(db)
                 .to_dict(lambda x: x.clan_battle_id, lambda x: x)
             )
 
-            self.quest_info: Dict[int, QuestDatum] = (
+    @lazy_property
+    def quest_info(self) -> Dict[int, QuestDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 QuestDatum.query(db)
                 .concat(HatsuneQuest.query(db))
                 .concat(ShioriQuest.query(db))
                 .to_dict(lambda x: x.quest_id, lambda x: x)
             )
 
-            self.chara_story_status: Dict[int, CharaStoryStatus] = (
+    @lazy_property
+    def chara_story_status(self) -> Dict[int, CharaStoryStatus]:
+        with self.dbmgr.session() as db:
+            return (
                 CharaStoryStatus.query(db)
                 .to_dict(lambda x: x.story_id, lambda x: x)
             )
 
-            self.chara2story: Dict[int, List[CharaStoryStatus]] = defaultdict(list)
-            for story in self.chara_story_status.values():
-                for unit_id in story.get_effect_unit_ids():
-                    self.chara2story[unit_id].append(story)
-            
-            self.guild_story: List[StoryDetail] = (
+    @lazy_property
+    def chara2story(self) -> Dict[int, List[CharaStoryStatus]]:
+        ret = defaultdict(list)
+        for story in self.chara_story_status.values():
+            for unit_id in story.get_effect_unit_ids():
+                ret[unit_id].append(story)
+        return ret
+        
+    @lazy_property
+    def guild_story(self) -> List[StoryDetail]:
+        with self.dbmgr.session() as db:
+            return (
                 StoryDetail.query(db)
                 .where(lambda x: x.story_id >= 3000000 and x.story_id < 4000000)
                 .to_list()
             )
 
-            self.main_story: List[StoryDetail] = (
+    @lazy_property
+    def birthday_story(self) -> List[StoryDetail]:
+        with self.dbmgr.session() as db:
+            return (
                 StoryDetail.query(db)
-                .where(lambda x: x.story_id >= 2000000 and x.story_id < 3000000)
+                .where(lambda x: x.story_group_id == 4010)
                 .to_list()
             )
 
-            self.tower_story: List[TowerStoryDetail] = (
+    @lazy_property
+    def main_story(self) -> List[StoryDetail]:
+        with self.dbmgr.session() as db:
+            return (
+                StoryDetail.query(db)
+                .where(lambda x: x.story_id >= 2000000 and x.story_id < 3000000)
+                .concat(
+                    BywayStoryDetail.query(db)
+                )
+                .to_list()
+            )
+
+    @lazy_property
+    def tower_story(self) -> List[TowerStoryDetail]:
+        with self.dbmgr.session() as db:
+            return (
                 TowerStoryDetail.query(db)
                 .to_list()
             )
 
-            self.tower_area: Dict[int, TowerAreaDatum] = (
+    @lazy_property
+    def tower_area(self) -> Dict[int, TowerAreaDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 TowerAreaDatum.query(db)
                 .to_dict(lambda x: x.max_floor_num, lambda x: x)
             )
 
-            self.tower_quest: Dict[int, TowerQuestDatum] = (
+    @lazy_property
+    def tower_quest(self) -> Dict[int, TowerQuestDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 TowerQuestDatum.query(db)
                 .to_dict(lambda x: x.tower_quest_id, lambda x: x)
             )
 
-            self.tdf_schedule: Dict[int, TdfSchedule] = (
+    @lazy_property
+    def tdf_schedule(self) -> Dict[int, TdfSchedule]:
+        with self.dbmgr.session() as db:
+            return (
                 TdfSchedule.query(db)
                 .to_dict(lambda x: x.schedule_id, lambda x: x)
             )
 
-            self.event_story_data: Dict[int, EventStoryDatum] = (
+    @lazy_property
+    def event_story_data(self) -> Dict[int, EventStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 EventStoryDatum.query(db)
                 .to_dict(lambda x: x.story_group_id, lambda x: x)
             )
 
-            self.event_name: Dict[int, str] = (
+    @lazy_property
+    def event_name(self) -> Dict[int, str]:
+        with self.dbmgr.session() as db:
+            return (
                 EventStoryDatum.query(db)
                 .select(lambda x: (x.story_group_id + 5000, x.title))
                 .concat(
@@ -460,62 +737,104 @@ class database():
                 ).to_dict(lambda x: x[0], lambda x: x[1])
             )
 
-            self.event_story_detail: List[EventStoryDetail] = (
+    @lazy_property
+    def event_story_detail(self) -> List[EventStoryDetail]:
+        with self.dbmgr.session() as db:
+            return (
                 EventStoryDetail.query(db)
                 .to_list()
             )
 
-            self.unit_story: List[StoryDetail] = (
+    @lazy_property
+    def unit_story(self) -> List[StoryDetail]:
+        with self.dbmgr.session() as db:
+            return (
                 StoryDetail.query(db)
                 .where(lambda x: x.story_id >= 1000000 and x.story_id < 2000000)
                 #.select(lambda x: (x.story_id, x.pre_story_id, x.story_group_id, x.love_level, x.title))
                 .to_list()
             )
 
-            self.equip_data: Dict[int, EquipmentDatum] = (
+    @lazy_property
+    def equip_data(self) -> Dict[int, EquipmentDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 EquipmentDatum.query(db)
                 .to_dict(lambda x: x.equipment_id, lambda x: x)
             )
 
-            self.skill_cost: Dict[int, int] = (
+    @lazy_property
+    def equip_promotion_to_raw_ore(self) -> Dict[int, ItemType]:
+        with self.dbmgr.session() as db:
+            return (
+                EquipmentDatum.query(db)
+                .where(lambda x: self.is_equip_raw_ore((eInventoryType.Equip, x.equipment_id)))
+                .to_dict(lambda x: x.promotion_level, lambda x: (eInventoryType.Equip, x.equipment_id))
+            )
+
+    @lazy_property
+    def skill_cost(self) -> Dict[int, int]:
+        with self.dbmgr.session() as db:
+            return (
                 SkillCost.query(db)
                 .to_dict(lambda x: x.target_level, lambda x: x.cost)
             )
 
-            self.skill_action: Dict[int, SkillAction] = (
+    @lazy_property
+    def skill_action(self) -> Dict[int, SkillAction]:
+        with self.dbmgr.session() as db:
+            return (
                 SkillAction.query(db)
                 .to_dict(lambda x: x.action_id, lambda x: x)
             )
 
-            self.skill_data: Dict[int, SkillDatum] = (
+    @lazy_property
+    def skill_data(self) -> Dict[int, SkillDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 SkillDatum.query(db)
                 .to_dict(lambda x: x.skill_id, lambda x: x)
             )
 
-            self.unit_skill_data: Dict[int, UnitSkillDatum] = (
+    @lazy_property
+    def unit_skill_data(self) -> Dict[int, UnitSkillDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitSkillDatum.query(db)
                 .to_dict(lambda x: x.unit_id, lambda x: x)
             )
 
-
-            self.experience_unit: Dict[int, int] = (
+    @lazy_property
+    def experience_unit(self) -> Dict[int, int]:
+        with self.dbmgr.session() as db:
+            return (
                 ExperienceUnit.query(db)
                 .to_dict(lambda x: x.unit_level, lambda x: x.total_exp)
             )
 
-            self.equipment_enhance_data: Dict[int, Dict[int, EquipmentEnhanceDatum]] = (
+    @lazy_property
+    def equipment_enhance_data(self) -> Dict[int, Dict[int, EquipmentEnhanceDatum]]:
+        with self.dbmgr.session() as db:
+            return (
                 EquipmentEnhanceDatum.query(db)
                 .group_by(lambda x: x.promotion_level)
                 .to_dict(lambda x: x.key, lambda x: 
                      x.to_dict(lambda x: x.equipment_enhance_level, lambda x: x))
             )
 
-            self.equipment_enhance_rate: Dict[int, EquipmentEnhanceRate] = (
+    @lazy_property
+    def equipment_enhance_rate(self) -> Dict[int, EquipmentEnhanceRate]:
+        with self.dbmgr.session() as db:
+            return (
                 EquipmentEnhanceRate.query(db)
                 .to_dict(lambda x: x.equipment_id, lambda x: x)
             )
 
-            self.inventory_name: Dict[ItemType, str] = (
+    @lazy_property
+    def inventory_name(self) -> Dict[ItemType, str]:
+        ret = {}
+        with self.dbmgr.session() as db:
+            ret = (
                 EquipmentDatum.query(db)
                 .select(lambda x: (eInventoryType(eInventoryType.Equip), x.equipment_id, x.equipment_name))
                 .concat(
@@ -542,153 +861,277 @@ class database():
                     ExEquipmentDatum.query(db)
                     .select(lambda x: (eInventoryType.ExtraEquip, x.ex_equipment_id, x.name))
                 )
+                .concat(
+                    CaravanDish.query(db)
+                    .select(lambda x: (eInventoryType.CaravanDish, x.dish_id, x.name))
+                )
+                .concat(
+                    CaravanTreasure.query(db)
+                    .select(lambda x: (eInventoryType.CaravanTreasure, x.id, x.name))
+                )
                 .to_dict(lambda x: (x[0], x[1]), lambda x: x[2])
             )
 
-            self.inventory_name[(eInventoryType.Stamina, 93001)] = "体力"
-            self.inventory_name[(eInventoryType.TeamExp, 92001)] = "经验"
-            self.inventory_name[(eInventoryType.Jewel, 91002)] = "宝石"
-            self.inventory_name[(eInventoryType.Gold, 94002)] = "mana"
-            self.inventory_name[(eInventoryType.SeasonPassPoint, 98002)] = "祝福经验值"
-            self.inventory_name[(eInventoryType.SeasonPassStamina, 93002)] = "星尘体力药剂"
+        ret[(eInventoryType.Stamina, 93001)] = "体力"
+        ret[(eInventoryType.TeamExp, 92001)] = "经验"
+        ret[(eInventoryType.Jewel, 91002)] = "宝石"
+        ret[(eInventoryType.Gold, 94002)] = "mana"
+        ret[(eInventoryType.SeasonPassPoint, 98002)] = "祝福经验值"
+        ret[(eInventoryType.SeasonPassStamina, 93002)] = "星尘体力药剂"
+        return ret
 
-            self.room_item: Dict[int, RoomItem] = (
+    @lazy_property
+    def room_item(self) -> Dict[int, RoomItem]:
+        with self.dbmgr.session() as db:
+            return (
                 RoomItem.query(db)
                 .to_dict(lambda x: x.id, lambda x: x)
             )
 
-            self.room_item_detail: Dict[int, Dict[int, RoomItemDetail]] = ( # id, level
+    @lazy_property
+    def room_item_detail(self) -> Dict[int, Dict[int, RoomItemDetail]]:
+            with self.dbmgr.session() as db:
+                return ( # id, level
                 RoomItemDetail.query(db)
                 .group_by(lambda x: x.room_item_id)
                 .to_dict(lambda x: x.key, lambda x: 
                     x.to_dict(lambda x: x.level, lambda x: x))
-            )
-            
-            self.daily_mission_data: Dict[int, DailyMissionDatum] = (
+        )
+        
+    @lazy_property
+    def daily_mission_data(self) -> Dict[int, DailyMissionDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 DailyMissionDatum.query(db)
                 .to_dict(lambda x: x.daily_mission_id, lambda x: x)
             )
 
-            self.stationary_mission_data: Dict[int, StationaryMissionDatum] = (
+    @lazy_property
+    def season_pack(self) -> Dict[int, SeasonPack]:
+        with self.dbmgr.session() as db:
+            return (
+                SeasonPack.query(db)
+                .where(lambda x: x.mission_id != 0)
+                .to_dict(lambda x: x.mission_id, lambda x: x)
+            )
+
+    @lazy_property
+    def stationary_mission_data(self) -> Dict[int, StationaryMissionDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 StationaryMissionDatum.query(db)
                 .to_dict(lambda x: x.stationary_mission_id, lambda x: x)
             )
 
-            self.emblem_mission_data: Dict[int, EmblemMissionDatum] = (
+    @lazy_property
+    def emblem_data(self) -> Dict[int, EmblemDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                EmblemDatum.query(db)
+                .to_dict(lambda x: x.emblem_id, lambda x: x)
+            )
+
+    @lazy_property
+    def emblem_mission_data(self) -> Dict[int, EmblemMissionDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 EmblemMissionDatum.query(db)
                 .to_dict(lambda x: x.mission_id, lambda x: x)
             )
 
-            self.memory_to_unit: Dict[int, int] = (
+    @lazy_property
+    def memory_to_unit(self) -> Dict[int, int]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitRarity.query(db)
                 .group_by(lambda x: x.unit_material_id)
                 .to_dict(lambda x: x.key, lambda x: x.first().unit_id)
             )
-            self.unit_to_memory: Dict[int, int] = {
-                value: key for key, value in self.memory_to_unit.items()
-            }
+    @lazy_property
+    def unit_to_memory(self) -> Dict[int, int]:
+        return {
+            value: key for key, value in self.memory_to_unit.items()
+        }
 
-            self.growth_parameter: Dict[int, GrowthParameter] = (
+    @lazy_property
+    def growth_parameter(self) -> Dict[int, GrowthParameter]:
+        with self.dbmgr.session() as db:
+            return (
                 GrowthParameter.query(db)
                 .to_dict(lambda x: x.growth_id, lambda x: x)
             )
 
-            self.growth_parameter_unique: Dict[int, GrowthParameterUnique] = (
+    @lazy_property
+    def growth_parameter_unique(self) -> Dict[int, GrowthParameterUnique]:
+        with self.dbmgr.session() as db:
+            return (
                 GrowthParameterUnique.query(db)
                 .to_dict(lambda x: x.growth_id, lambda x: x)
             )
 
-            self.unit_data: Dict[int, UnitDatum] = (
+    @lazy_property
+    def unit_data(self) -> Dict[int, UnitDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitDatum.query(db)
                 .to_dict(lambda x: x.unit_id, lambda x: x)
             )
 
-            self.unlock_unit_condition: Dict[int, UnlockUnitCondition] = (
+    @lazy_property
+    def unlock_unit_condition(self) -> Dict[int, UnlockUnitCondition]:
+        with self.dbmgr.session() as db:
+            return (
                 UnlockUnitCondition.query(db)
                 .to_dict(lambda x: x.unit_id, lambda x: x)
             )
 
-            self.unit_kana_ids: Dict[str, List[int]] = (
+    @lazy_property
+    def unit_kana_ids(self) -> Dict[str, List[int]]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitDatum.query(db)
                 .where(lambda x: x.unit_id in self.unlock_unit_condition)
                 .group_by(lambda x: x.kana)
                 .to_dict(lambda x: x.key, lambda x: x.select(lambda y: y.unit_id).to_list())
             )
 
-            self.pure_memory_to_unit: Dict[ItemType, int] = (
+    @lazy_property
+    def pure_memory_to_unit(self) -> Dict[ItemType, int]:
+        with self.dbmgr.session() as db:
+            return (
                 UnlockRarity6.query(db)
                 .where(lambda x: x.slot_id == 1)
                 .to_dict(lambda x: (eInventoryType.Item, x.material_id), lambda x: x.unit_id)
             )
-            self.unit_to_pure_memory: Dict[int, ItemType] = {
-                value: key for key, value in self.pure_memory_to_unit.items()
-            }
+    @lazy_property
+    def unit_to_pure_memory(self) -> Dict[int, ItemType]:
+        return {
+            value: key for key, value in self.pure_memory_to_unit.items()
+        }
 
-            self.six_area: Dict[int, QuestDatum] = (
+    @lazy_property
+    def six_area(self) -> Dict[int, QuestDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 QuestDatum.query(db)
                 .where(lambda x: self.is_very_hard_quest(x.quest_id))
                 .to_dict(lambda x: x.quest_id, lambda x: x)
             )
 
-            self.login_bonus_data: Dict[int, LoginBonusDatum] = (
+    @lazy_property
+    def login_bonus_data(self) -> Dict[int, LoginBonusDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 LoginBonusDatum.query(db)
                 .to_dict(lambda x: x.login_bonus_id, lambda x: x)
             )
 
-            self.tower_schedule: Dict[int, TowerSchedule] = (
+    @lazy_property
+    def colosseum_schedule_data(self) -> Dict[int, ColosseumScheduleDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                ColosseumScheduleDatum.query(db)
+                .to_dict(lambda x: x.schedule_id, lambda x: x)
+            )
+
+    @lazy_property
+    def tower_schedule(self) -> Dict[int, TowerSchedule]:
+        with self.dbmgr.session() as db:
+            return (
                 TowerSchedule.query(db)
                 .to_dict(lambda x: x.tower_schedule_id, lambda x: x)
             )
-            
-            self.dungeon_name: Dict[int, str] = (
+        
+    @lazy_property
+    def dungeon_name(self) -> Dict[int, str]:
+        with self.dbmgr.session() as db:
+            return (
                 DungeonArea.query(db)
                 .to_dict(lambda x: x.dungeon_area_id, lambda x: x.dungeon_name)
             )
 
-            self.gacha_exchange_chara: Dict[int, List[GachaExchangeLineup]] = (
+    @lazy_property
+    def gacha_exchange_chara(self) -> Dict[int, List[GachaExchangeLineup]]:
+        with self.dbmgr.session() as db:
+            return (
                 GachaExchangeLineup.query(db)
                 .group_by(lambda x: x.exchange_id)
                 .to_dict(lambda x: x.key, lambda x: x.to_list())
             )
 
-            self.campaign_free_gacha: Dict[int, CampaignFreegacha] = (
+    @lazy_property
+    def campaign_free_gacha(self) -> Dict[int, CampaignFreegacha]:
+        with self.dbmgr.session() as db:
+            return (
                 CampaignFreegacha.query(db)
                 .to_dict(lambda x: x.campaign_id, lambda x: x)
             )
-            
-            self.campaign_free_gacha_data: Dict[int, List[CampaignFreegachaDatum]] = (
+        
+    @lazy_property
+    def campaign_free_gacha_data(self) -> Dict[int, List[CampaignFreegachaDatum]]:
+        with self.dbmgr.session() as db:
+            return (
                 CampaignFreegachaDatum.query(db)
                 .group_by(lambda x: x.campaign_id)
                 .to_dict(lambda x: x.key, lambda x: x.to_list())
             )
 
-            self.gacha_data: Dict[int, GachaDatum] = (
+    @lazy_property
+    def gacha_data(self) -> Dict[int, GachaDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 GachaDatum.query(db)
                 .to_dict(lambda x: x.gacha_id, lambda x: x)
             )
 
-            self.prizegacha_data: Dict[int, PrizegachaDatum] = (
+    @lazy_property
+    def gacha_pickup(self) -> Dict[int, Dict[int, GachaPickup]]:
+        with self.dbmgr.session() as db:
+            return (
+                GachaPickup.query(db)
+                .group_by(lambda x: x.id)
+                .to_dict(lambda x: x.key, lambda x: x.to_dict(
+                    lambda x: x.priority, lambda x: x
+                ))
+            )
+
+    @lazy_property
+    def prizegacha_data(self) -> Dict[int, PrizegachaDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 PrizegachaDatum.query(db)
                 .to_dict(lambda x: x.prizegacha_id, lambda x: x)
             )
 
-            self.prizegacha_sp_data: Dict[int, Dict[int, PrizegachaSpDatum]] = (
+    @lazy_property
+    def prizegacha_sp_data(self) -> Dict[int, Dict[int, PrizegachaSpDatum]]:
+        with self.dbmgr.session() as db:
+            return (
                 PrizegachaSpDatum.query(db)
                 .group_by(lambda x: x.gacha_id)
                 .to_dict(lambda x: x.key, lambda x: x.to_dict(lambda x: x.rarity, lambda x: x))
             )
 
-            self.prizegacha_sp_detail: Dict[int, PrizegachaSpDetail] = (
+    @lazy_property
+    def prizegacha_sp_detail(self) -> Dict[int, PrizegachaSpDetail]:
+        with self.dbmgr.session() as db:
+            return (
                 PrizegachaSpDetail.query(db)
                 .to_dict(lambda x: x.disp_rarity, lambda x: x)
             )
 
-            self.campaign_gacha: Dict[int, CampaignFreegacha] = (
+    @lazy_property
+    def campaign_gacha(self) -> Dict[int, CampaignFreegacha]:
+        with self.dbmgr.session() as db:
+            return (
                 CampaignFreegacha.query(db)
                 .to_dict(lambda x: x.campaign_id, lambda x: x)
             )
 
-            self.love_char: Dict[int, Tuple[int, int]] = (
+    @lazy_property
+    def love_char(self) -> Dict[int, Tuple[int, int]]:
+        with self.dbmgr.session() as db:
+            return (
                 LoveChara.query(db)
                 .group_by(lambda x: x.rarity)
                 .to_dict(lambda x: x.key, lambda x:
@@ -696,146 +1139,298 @@ class database():
                 )
             )
 
-            self.love_cake: List[ItemDatum] = (
+    @lazy_property
+    def love_cake(self) -> List[ItemDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 ItemDatum.query(db)
                 .where(lambda x: x.item_id >= 50000 and x.item_id < 51000)
                 .to_list()
             )
 
-            self.love_cake = self.love_cake[::-1]
-
-            self.exp_potion: List[ItemDatum] = (
+    @lazy_property
+    def exp_potion(self) -> List[ItemDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 ItemDatum.query(db)
                 .where(lambda x: x.item_id >= 20001 and x.item_id < 21000)
                 .to_list()
             )
 
-            self.equip_enhance_stone: List[ItemDatum] = (
+    @lazy_property
+    def equip_enhance_stone(self) -> List[ItemDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 ItemDatum.query(db)
                 .where(lambda x: x.item_id >= 22001 and x.item_id < 23000)
                 .to_list()
             )
 
-            self.quest_to_event: Dict[int, HatsuneQuest] = (
+    @lazy_property
+    def gacha_temp_ticket(self) -> List[ItemDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                ItemDatum.query(db)
+                .where(lambda x: x.item_id >= 1024000 and x.item_id < 1025000)
+                .to_list()
+            )
+
+    @lazy_property
+    def quest_to_event(self) -> Dict[int, HatsuneQuest]:
+        with self.dbmgr.session() as db:
+            return (
                 HatsuneQuest.query(db)
                 .concat(ShioriQuest.query(db))
                 .to_dict(lambda x: x.quest_id, lambda x: x) # 类型不一致，Hatsune和Shiori是否分开？
             )
-            
-            self.hatsune_item: Dict[int, HatsuneItem] = (
+        
+    @lazy_property
+    def hatsune_item(self) -> Dict[int, HatsuneItem]:
+        with self.dbmgr.session() as db:
+            return (
                 HatsuneItem.query(db)
                 .to_dict(lambda x: x.event_id, lambda x: x)
             )
 
-            self.mme_story_data: Dict[int, MmeStoryDatum] = (
+    @lazy_property
+    def wtm_story_data(self) -> Dict[int, WtmStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                WtmStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
+            )
+
+    @lazy_property
+    def wts_story_data(self) -> Dict[int, WtsStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                WtsStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
+            )
+
+    @lazy_property
+    def bmy_story_data(self) -> Dict[int, BmyStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                BmyStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
+            )
+
+    @lazy_property
+    def won_story_data(self) -> Dict[int, WonStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                WonStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
+            )
+
+    @lazy_property
+    def mme_story_data(self) -> Dict[int, MmeStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 MmeStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.dsb_story_data: Dict[int, DsbStoryDatum] = (
+    @lazy_property
+    def dsb_story_data(self) -> Dict[int, DsbStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 DsbStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.xeh_story_data: Dict[int, XehStoryDatum] = (
+    @lazy_property
+    def xeh_story_data(self) -> Dict[int, XehStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 XehStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.lsv_story_data: Dict[int, LsvStoryDatum] = (
+    @lazy_property
+    def dvs_story_data(self) -> Dict[int, DvsStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                DvsStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
+            )
+
+    @lazy_property
+    def lsv_story_data(self) -> Dict[int, LsvStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 LsvStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.ysn_story_data: Dict[int, YsnStoryDatum] = (
+    @lazy_property
+    def ysn_story_data(self) -> Dict[int, YsnStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 YsnStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.nop_story_data: Dict[int, NopDramaDatum] = (
+    @lazy_property
+    def nop_story_data(self) -> Dict[int, NopDramaDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 NopDramaDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.mhp_story_data: Dict[int, MhpStoryDatum] = (
+    @lazy_property
+    def mhp_story_data(self) -> Dict[int, MhpStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 MhpStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.svd_story_data: Dict[int, SvdStoryDatum] = (
+    @lazy_property
+    def svd_story_data(self) -> Dict[int, SvdStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 SvdStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.ssp_story_data: Dict[int, SspStoryDatum] = (
+    @lazy_property
+    def ssp_story_data(self) -> Dict[int, SspStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 SspStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.ske_story_data: Dict[int, SkeStoryDatum] = (
+    @lazy_property
+    def ske_story_data(self) -> Dict[int, SkeStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 SkeStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.lto_story_data: Dict[int, LtoStoryDatum] = (
+    @lazy_property
+    def lto_story_data(self) -> Dict[int, LtoStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 LtoStoryDatum.query(db)
                 .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
-            self.ex_equipment_data: Dict[int, ExEquipmentDatum] = (
+    @lazy_property
+    def ex_equipment_data(self) -> Dict[int, ExEquipmentDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 ExEquipmentDatum.query(db)
                 .to_dict(lambda x: x.ex_equipment_id, lambda x: x)
             )
 
-            self.unit_ex_equipment_slot: Dict[int, UnitExEquipmentSlot] = (
+    @lazy_property
+    def unit_ex_equipment_slot(self) -> Dict[int, UnitExEquipmentSlot]:
+        with self.dbmgr.session() as db:
+            return (
                 UnitExEquipmentSlot.query(db)
                 .to_dict(lambda x: x.unit_id, lambda x: x)
             )
 
-            self.ex_equipment_type_to_clan_battle_ex: Dict[int, int] = { # 只有每个类别的会战装备
-                ex.category: ex.ex_equipment_id for ex in self.ex_equipment_data.values() if ex.clan_battle_equip_flag == 1 and ex.rarity == 3
-            }
+    @lazy_property
+    def ex_equipment_type_to_clan_battle_ex(self) -> Dict[int, int]:
+        return { # 只有每个类别的会战装备
+            ex.category: ex.ex_equipment_id for ex in self.ex_equipment_data.values() if ex.clan_battle_equip_flag == 1 and ex.rarity == 3
+        }
 
-            self.ex_equipment_enhance_data: Dict[int, Dict[int, ExEquipmentEnhanceDatum]] = (
+    @lazy_property
+    def ex_equipment_enhance_data(self) -> Dict[int, Dict[int, ExEquipmentEnhanceDatum]]:
+        with self.dbmgr.session() as db:
+            return (
                 ExEquipmentEnhanceDatum.query(db)
                 .group_by(lambda x: x.rarity)
                 .to_dict(lambda x: x.key, lambda x: x.to_dict(lambda x: x.enhance_level, lambda x: x))
             )
 
-            self.ex_event_data: Dict[int, TravelExEventDatum] = (
+    @lazy_property
+    def ex_event_data(self) -> Dict[int, TravelExEventDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 TravelExEventDatum.query(db)
                 .to_dict(lambda x: x.still_id, lambda x: x)
             )
 
-            self.travel_area_data: Dict[int, TravelAreaDatum] = (
+    @lazy_property
+    def travel_area_data(self) -> Dict[int, TravelAreaDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 TravelAreaDatum.query(db)
                 .to_dict(lambda x: x.travel_area_id, lambda x: x)
             )
 
-            self.travel_quest_data: Dict[int, TravelQuestDatum] = (
+    @lazy_property
+    def travel_top_event_drama(self) -> Dict[int, List[TravelTopEventDrama]]:
+        with self.dbmgr.session() as db:
+            return (
+                TravelTopEventDrama.query(db)
+                .group_by(lambda x: x.drama_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_list())
+            )
+
+    @lazy_property
+    def travel_round_event_data(self) -> Dict[int, Dict[int, TravelRoundEventDatum]]:
+        with self.dbmgr.session() as db:
+            return (
+                TravelRoundEventDatum.query(db)
+                .group_by(lambda x: x.round_event_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_dict(
+                    lambda x: x.round, lambda x: x
+                ))
+            )
+
+    @lazy_property
+    def travel_quest_data(self) -> Dict[int, TravelQuestDatum]:
+        with self.dbmgr.session() as db:
+            return (
                 TravelQuestDatum.query(db)
                 .to_dict(lambda x: x.travel_quest_id, lambda x: x)
             )
 
-            self.quest_name: Dict[int, str] = (
+    @lazy_property
+    def quest_name(self) -> Dict[int, str]:
+        ret = {}
+        with self.dbmgr.session() as db:
+            ret = (
                 QuestDatum.query(db)
                 .concat(HatsuneQuest.query(db))
                 .concat(ShioriQuest.query(db))
                 .concat(TrainingQuestDatum.query(db))
                 .to_dict(lambda x: x.quest_id, lambda x: x.quest_name)
             )
-            self.quest_name.update(
-                {x.travel_quest_id :x.travel_quest_name for x in self.travel_quest_data.values()}
+        ret.update(
+            {x.travel_quest_id :x.travel_quest_name for x in self.travel_quest_data.values()}
+        )
+        return ret
+
+    @lazy_property
+    def shop_static_price_group(self) -> Dict[int, List[ShopStaticPriceGroup]]:
+        with self.dbmgr.session() as db:
+            return (
+                ShopStaticPriceGroup.query(db)
+                .group_by(lambda x: x.price_group_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_list())
             )
 
-            self.ex_rarity_name = {
-                1: '铜',
-                2: '银',
-                3: '金',
-                4: '粉'
-            }
+    ex_rarity_name = {
+        1: '铜',
+        2: '银',
+        3: '金',
+        4: '粉'
+    }
 
-            self.shiori_event_quests: Dict[int, dict[int, ShioriQuest]] = (
+    @lazy_property
+    def shiori_event_quests(self) -> Dict[int, Dict[int, ShioriQuest]]:
+        with self.dbmgr.session() as db:
+            return (
                 ShioriQuest.query(db)
                 .group_by(lambda x: x.event_id)
                 .to_dict(lambda x: x.key, lambda x: x.to_dict(lambda x: x.quest_id, lambda x: x))
@@ -865,7 +1460,7 @@ class database():
         try:
             return self.inventory_name[(item[0], item[1])]
         except:
-            return f"未知物品({item[1]})"
+            return f"未知物品({item[0]}, {item[1]})"
 
     def get_ex_equip_name(self, item: int, rank: int = 0) -> str:
         try:
@@ -875,6 +1470,8 @@ class database():
 
     def get_unit_name(self, unit_id: int) -> str:
         try:
+            if unit_id // 100 in CHARA_NICKNAME:
+                return CHARA_NICKNAME[unit_id // 100]
             return self.inventory_name[(eInventoryType.Unit, unit_id)]
         except:
             return f"未知角色({unit_id})"
@@ -909,7 +1506,7 @@ class database():
             return f"未知关卡({quest_id})"
 
     def is_daily_mission(self, mission_id: int) -> bool:
-        return mission_id in self.daily_mission_data
+        return mission_id in self.daily_mission_data or mission_id in self.season_pack
 
     def is_stationary_mission(self, mission_id: int) -> bool:
         return mission_id in self.stationary_mission_data
@@ -1047,6 +1644,10 @@ class database():
                 .where(lambda x: now >= self.parse_time(x.start_time) and now <= self.parse_time(x.end_time)) \
                 .to_list()
 
+    def get_active_hatsune_id(self) -> List[int]:
+        active_hatsune = self.get_active_hatsune()
+        return [event.event_id for event in active_hatsune]
+
     def get_active_hatsune_name(self) -> List[str]:
         active_hatsune = self.get_active_hatsune()
         return [f"{event.event_id}:{db.event_name[event.event_id]}" for event in active_hatsune]
@@ -1103,12 +1704,14 @@ class database():
         tomorrow = now + datetime.timedelta(days = 1)
         half_day = datetime.timedelta(hours = 7)
         n3 = (flow(self.campaign_schedule.values())
-                .where(lambda x: self.is_normal_quest_campaign(x.id) and x.value >= 3000 and self.is_level_effective_scope_in_campaign(level, x.id))
+                .where(lambda x: self.is_normal_quest_campaign(x.id) and x.value >= 6000 and self.is_level_effective_scope_in_campaign(level, x.id)) # TODO change 3000 when stop speed up
+                # .where(lambda x: self.is_normal_quest_campaign(x.id) and x.value >= 3000 and self.is_level_effective_scope_in_campaign(level, x.id))
                 .select(lambda x: (db.parse_time(x.start_time), db.parse_time(x.end_time)))
                 .to_list()
               )
         h3 = (flow(self.campaign_schedule.values())
-                .where(lambda x: self.is_hard_quest_campaign(x.id) and x.value >= 3000)
+                .where(lambda x: self.is_hard_quest_campaign(x.id) and x.value >= 6000) # TODO change 3000 when stop speed up
+                # .where(lambda x: self.is_hard_quest_campaign(x.id) and x.value >= 3000)
                 .select(lambda x: (db.parse_time(x.start_time), db.parse_time(x.end_time)))
                 .to_list()
              )
@@ -1158,10 +1761,15 @@ class database():
         assert len(schedule) == 1
         return schedule[0]
 
-    def parse_time(self, time: str) -> datetime.datetime:
+    def parse_time(self, time: Union[int, str]) -> datetime.datetime:
+        try:
+            return datetime.datetime.fromtimestamp(int(time))
+        except:
+            pass
+
         for timeformat in ['%Y/%m/%d %H:%M:%S', '%Y/%m/%d %H:%M', '%Y/%m/%d', '%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y%m%d%H%M%S']:
             try:
-                return datetime.datetime.strptime(time, timeformat)
+                return datetime.datetime.strptime(str(time), timeformat)
             except:
                 pass
         raise ValueError(f"无法解析时间：{time}")
@@ -1198,6 +1806,14 @@ class database():
 
     def get_today_start_time(self) -> datetime.datetime:
         return self.get_start_time(apiclient.datetime)
+
+    def get_rarity_memory_demand(self, unit_id: int, start_rarity: int, target_rarity: int, token: ItemType) -> int:
+        return (
+            flow(self.rarity_up_required[unit_id].items())
+            .where(lambda x: x[0] > start_rarity and x[0] <= target_rarity)
+            .select(lambda x: x[1][token])
+            .sum()
+        )
 
     def get_unique_equip_material_demand(self, unit_id: int, slot_id:int, start_rank:int, target_rank: int) -> typing.Counter[ItemType]: 
         if unit_id not in db.unit_unique_equip[slot_id]:
@@ -1253,45 +1869,73 @@ class database():
     def get_level_up_total_exp(self, target_level: int) -> int:
         return self.experience_unit[target_level]
 
-    def get_cur_gacha(self):
+    def get_gacha_temp_ticket(self) -> List[int]:
+        now = apiclient.datetime
+        return flow(self.gacha_temp_ticket) \
+            .where(lambda x: self.parse_time(x.start_time) <= now and now <= self.parse_time(x.end_time)) \
+            .select(lambda x: x.item_id) \
+            .to_list()
+
+    def get_cur_gacha(self) -> List[str]:
         now = apiclient.datetime
         return flow(self.gacha_data.values()) \
         .where(lambda x: self.parse_time(x.start_time) <= now and now <= self.parse_time(x.end_time)) \
         .select(lambda x: f"{x.gacha_id}: {x.gacha_name}-{x.pick_up_chara_text}") \
         .to_list()
 
-    def get_equip_max_star(self, equip_id: int):
+    def get_mirai_gacha(self) -> List[str]:
+        now = apiclient.datetime
+        return flow(self.gacha_data.values()) \
+        .where(lambda x: now <= self.parse_time(x.end_time)) \
+        .select(lambda x: f"{x.gacha_id}: {x.gacha_name}-{x.pick_up_chara_text}") \
+        .to_list()
+
+    def get_raw_ore_of_equip(self, equip: typing.Counter[ItemType]) -> typing.Counter[ItemType]:
+        ore_cnt = Counter()
+        for e, cnt in equip.items():
+            raw_ore = self.get_equip_raw_ore(e[1])
+            ore_cnt[raw_ore] += cnt
+        return ore_cnt
+
+    def get_equip_raw_ore(self, equip_id: int) -> ItemType:
+        promote_level = self.get_equip_promotion(equip_id)
+        return self.equip_promotion_to_raw_ore[promote_level] if promote_level in self.equip_promotion_to_raw_ore else (eInventoryType.Equip, equip_id)
+
+    def get_equip_promotion(self, equip_id: int) -> int:
+        return self.equip_data[equip_id].promotion_level
+
+    def get_equip_max_star(self, equip_id: int) -> int:
         return max(self.equipment_enhance_data[self.equip_data[equip_id].promotion_level].keys()) if self.equip_data[equip_id].promotion_level in self.equipment_enhance_data else 0
 
-    def get_equip_star_pt(self, equip_id: int, star: int):
+    def get_equip_star_pt(self, equip_id: int, star: int) -> int:
         equip = self.equip_data[equip_id]
         return self.equipment_enhance_data[equip.promotion_level][star].total_point
 
-    def get_equip_star_from_pt(self, equip_id: int, enhancement_pt: int):
+    def get_equip_star_from_pt(self, equip_id: int, enhancement_pt: int) -> int:
         equip = self.equip_data[equip_id]
         history_star = [star for star, enhancement_data in self.equipment_enhance_data[equip.promotion_level].items() if enhancement_data.total_point <= enhancement_pt]
         star = max([0] + history_star)
         return star
 
-    def get_unique_equip_level_from_pt(self, equip_slot: int, enhancement_pt: int):
+    def get_unique_equip_level_from_pt(self, equip_slot: int, enhancement_pt: int) -> int:
         histort_level = [star for star, enhancement_data in self.unique_equipment_enhance_data[equip_slot].items() if enhancement_data.total_point <= enhancement_pt]
-        level = max([1] + histort_level)
+        level = max(histort_level) if histort_level else 1
         return level
 
-    def get_unique_equip_max_level_from_rank(self, equip_slot: int, rank: int):
+    def get_unique_equip_max_level_from_rank(self, equip_slot: int, rank: int) -> int:
         return self.unique_equip_rank[equip_slot][rank].enhance_level
 
-    def get_unique_equip_rank_from_level(self, equip_slot: int, level: int):
+    def get_unique_equip_rank_from_level(self, equip_slot: int, level: int) -> int:
         rank = self.unique_equipment_enhance_data[equip_slot][level].rank if level in self.unique_equipment_enhance_data[equip_slot] else 1
         return rank
 
-    def get_unique_equip_rank_required_level(self, slot_id: int, unit_id: int, rank: int):
+    def get_unique_equip_rank_required_level(self, slot_id: int, unit_id: int, rank: int) -> int:
         rank -= 1 # db是从当前rank升下一级的花费限制，因此升到rank的限制来自于rank-1
         equip_id = db.unit_unique_equip[slot_id][unit_id].equip_id
         level = self.unique_equipment_rank_up[equip_id][rank].unit_level if rank > 0 else 1
         return level
 
-    def get_unique_equip_pt_from_level(self, equip_slot: int, level: int):
+    def get_unique_equip_pt_from_level(self, equip_slot: int, level: int) -> int:
         pt = self.unique_equipment_enhance_data[equip_slot][level].total_point if level in self.unique_equipment_enhance_data[equip_slot] else 0
         return pt
 
@@ -1302,7 +1946,23 @@ class database():
                 .to_list()
         )
 
-    def deck_sort_unit(self, units: List[int]):
+    def get_shop_item_buy_total_price(self, price_group_id: int, bought_cnt: int, buy_cnt: int) -> int:
+        cost = 0
+        while buy_cnt > 0:
+            info = self.get_shop_item_price_info(price_group_id, bought_cnt)
+            cnt = buy_cnt if info.buy_count_to == -1 else min(buy_cnt, info.buy_count_to - bought_cnt)
+            cost += cnt * info.count
+            buy_cnt -= cnt
+        return cost
+
+    def get_shop_item_price_info(self, price_group_id: int, bought_cnt: int) -> ShopStaticPriceGroup:
+        buy_cnt = bought_cnt + 1
+        item = flow(self.shop_static_price_group[price_group_id]) \
+            .first(lambda x: x.buy_count_from <= buy_cnt and (buy_cnt <= x.buy_count_to or x.buy_count_to == -1)) 
+        return item
+
+
+    def deck_sort_unit(self, units: List[int]) -> List[int]:
         return sorted(units, key=lambda x: self.unit_data[x].search_area_width if x in self.unit_data else 9999)
 
     def is_stamina_type(self, type_id: int) -> bool:
@@ -1327,13 +1987,13 @@ class database():
     def is_secret_dungeon_id(self, dungeon_id: int) -> bool:
         return dungeon_id // 1000 == 32
 
-    def unit_rank_candidate(self):
+    def unit_rank_candidate(self) -> List[int]:
         return list(range(1, self.equip_max_rank + 1))
 
-    def unit_level_candidate(self):
+    def unit_level_candidate(self) -> List[int]:
         return list(range(1, self.team_max_level + 1 + 10))
 
-    def unit_unique_equip_level_candidate(self, equip_slot: int):
+    def unit_unique_equip_level_candidate(self, equip_slot: int) -> List[int]:
         return list(range(0, self.unique_equipment_max_level[equip_slot] + 1))
 
     def last_normal_quest(self) -> List[int]:
@@ -1345,11 +2005,11 @@ class database():
                 .select(lambda x: x.quest_id) \
                 .to_list()
 
-    def last_normal_quest_candidate(self):
+    def last_normal_quest_candidate(self) -> List[str]:
         quest = self.last_normal_quest()
         return [f"{x}: {self.quest_name[x].split(' ')[1]}" for x in quest]
 
-    def travel_quest_candidate(self):
+    def travel_quest_candidate(self) -> List[str]:
         return flow(self.travel_quest_data.values()) \
                 .select(lambda x: f"{x.travel_area_id % 10}-{x.travel_quest_id % 10}") \
                 .to_list()
@@ -1449,10 +2109,27 @@ class database():
         return attribute_power + skill_power
 
     def calc_travel_once_time(self, quest_id: int, power: int, coeff: float = 0.015) -> int:
-        quest = db.travel_quest_data[quest_id]
+        quest = self.travel_quest_data[quest_id]
         return quest.travel_time - min(
             quest.travel_time_decrease_limit,
             int(max(0, power - quest.need_power) * coeff)
         )
+
+    def unlock_unit_condition_candidate(self) -> List[int]:
+        return self.unlock_unit_condition
+
+    def limit_unit_condition_candidate(self) -> List[int]:
+        return [x for x in self.unlock_unit_condition if self.unit_data[x].is_limited]
+
+    def free_gacha_ids_candidate(self):
+        free_gacha_campaigns = flow(self.campaign_free_gacha.values()) \
+            .where(lambda x: apiclient.datetime < self.parse_time(x.end_time)) \
+            .select(lambda x: x.campaign_id) \
+            .to_list()
+        if not free_gacha_campaigns:
+            return []
+        free_gacha_campaign = min(free_gacha_campaigns)
+        return [gacha.gacha_id for gacha in self.campaign_free_gacha_data[free_gacha_campaign]]
+
 
 db = database()

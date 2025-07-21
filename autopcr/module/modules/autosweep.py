@@ -14,6 +14,7 @@ from ...core.apiclient import apiclient
 @conditional_execution1("normal_sweep_run_time", ["n庆典"])
 @singlechoice("normal_sweep_strategy", "刷取策略", "刷最缺", ["刷最缺", "均匀刷"])
 @singlechoice("normal_sweep_quest_scope", "刷取图", "全部", ["全部", "可扫荡", "新开图"])
+@booltype("normal_sweep_full_ok_stop", "刷完所有角色停止", False)
 @booltype("normal_sweep_equip_ok_to_full", "刷满则考虑所有角色", False)
 @singlechoice("normal_sweep_consider_unit", "起始品级", "所有", ["所有", "最高", "次高", "次次高"])
 @booltype("normal_sweep_consider_unit_fav", "收藏角色", True)
@@ -53,6 +54,7 @@ class smart_normal_sweep(Module):
         strategy: str = self.get_config('normal_sweep_strategy')
         full2all: bool = self.get_config('normal_sweep_equip_ok_to_full')
         quest_scope: str = self.get_config('normal_sweep_quest_scope')
+        full2stop: bool = self.get_config('normal_sweep_full_ok_stop')
         opt: Dict[Union[int, str], int] = {
             '所有': 1,
             '最高': db.equip_max_rank,
@@ -92,6 +94,12 @@ class smart_normal_sweep(Module):
                                 demand = all_demand
                                 gap = client.data.get_demand_gap(demand, lambda x: db.is_equip(x))
                                 self._log("考虑所有角色的需求装备")
+
+                                if all(gap[item] <= 0 for item in gap):
+                                    self._log("所有角色的需求装备均已盈余")
+                                    if full2stop:
+                                        self._log("停止刷图")
+                                        break
 
                     quest_weight = client.data.get_quest_weght(gap)
                     quest_id = sorted(quest_list, key = lambda x: quest_weight[x], reverse = True)
@@ -176,18 +184,20 @@ class simple_demand_sweep_base(Module):
                 raise SkipError()
 
 
+@singlechoice('hard_sweep_gap_limit', "盈余阈值", 10, [0, 5, 10])
 @conditional_execution1("hard_sweep_run_time", ["h庆典"])
 @singlechoice('hard_sweep_consider_unit_order', "刷取顺序", "缺口少优先", ["缺口少优先", "缺口大优先"])
 @booltype('hard_sweep_consider_high_rarity_first', "三星角色优先", False)
-@description('根据记忆碎片缺口刷hard图，不包括外传')
+@description('根据记忆碎片缺口刷hard图，不包括外传，直到盈余超过阈值')
 @name('智能刷hard图')
 @default(False)
 @tag_stamina_consume
 class smart_hard_sweep(simple_demand_sweep_base):
 
     async def get_need_list(self, client: pcrclient) -> List[Tuple[ItemType, int]]:
+        gap_limit = self.get_config('hard_sweep_gap_limit')
         need_list = client.data.get_memory_demand_gap()
-        need_list = [(token, need) for token, need in need_list.items() if need > 0]
+        need_list = [(token, need) for token, need in need_list.items() if need > -gap_limit]
         if not need_list:
             raise SkipError("所有记忆碎片均已盈余")
         reverse = -1 if self.get_config('hard_sweep_consider_unit_order') == '缺口大优先' else 1
@@ -204,17 +214,19 @@ class smart_hard_sweep(simple_demand_sweep_base):
     def get_max_times(self, client: pcrclient, quest_id: int) -> int:
         return 3
 
+@singlechoice('shiori_sweep_gap_limit', "盈余阈值", 10, [0, 5, 10])
 @conditional_execution1("shiori_sweep_run_time", ["无庆典"])
 @singlechoice('shiori_sweep_consider_unit_order', "刷取顺序", "缺口少优先", ["缺口少优先", "缺口大优先"])
-@description('根据记忆碎片缺口刷外传图')
+@description('根据记忆碎片缺口刷外传图，直到盈余超过阈值')
 @name('智能刷外传图')
 @default(False)
 @tag_stamina_consume
 class smart_shiori_sweep(simple_demand_sweep_base):
 
     async def get_need_list(self, client: pcrclient) -> List[Tuple[ItemType, int]]:
+        gap_limit = self.get_config('shiori_sweep_gap_limit')
         need_list = client.data.get_memory_demand_gap()
-        need_list = [(token, need) for token, need in need_list.items() if need > 0]
+        need_list = [(token, need) for token, need in need_list.items() if need > -gap_limit]
         if not need_list:
             raise SkipError("所有记忆碎片均已盈余")
         reverse = -1 if self.get_config('shiori_sweep_consider_unit_order') == '缺口大优先' else 1
@@ -265,6 +277,14 @@ unique_equip_2_pure_memory_id = [
         105901, # 妈
         112201, # 魔驴
         112301, # 魔栞
+        100301, # 剑圣
+        112101, # 春女仆
+        111501, # 圣克
+        111701, # 圣yly
+        111601, # 圣诞望
+        107501, # 水吃
+        113101, # 水流夏
+        113301, # 水七七香
 ]
 @conditional_execution1("very_hard_sweep_run_time", ["vh庆典"])
 @description('储备专二需求的150碎片，包括' + ','.join(db.get_unit_name(unit_id) for unit_id in unique_equip_2_pure_memory_id))
@@ -278,7 +298,7 @@ class mirai_very_hard_sweep(simple_demand_sweep_base):
         need_list = []
         for unit in unique_equip_2_pure_memory_id:
             kana = db.unit_data[unit].kana
-            target[kana] += 150
+            target[kana] += 150 if unit not in client.data.unit or len(client.data.unit[unit].unique_equip_slot) < 2 or not client.data.unit[unit].unique_equip_slot[1].is_slot else 0
             own = -sum(pure_gap[db.unit_to_pure_memory[unit]] if unit in db.unit_to_pure_memory else 0 for unit in db.unit_kana_ids[kana])
             if own < target[kana]:
                 need_list.append(((0, kana), target[kana] - own))
@@ -366,29 +386,33 @@ class DIY_sweep(Module):
                 f": 刷取{cnt}次" for quest, cnt in clean_cnt.items())
                 self._log(msg)
                 self._log("---------")
+        else:
+            self._log("需刷取的图均无次数")
         if result:
             self._log(await client.serialize_reward_summary(result))
 
 @description('''
-首先按次数逐一刷取名字为start的图
+首先按次数逐一刷取名字为start和start2的图
 然后循环按次数刷取设置为loop的图
 当被动体力回复完全消耗后，刷图结束
 '''.strip())
 @name("自定义刷图")
+@conditional_execution1("start2_run_time", ['vh庆典'], desc="start2刷取庆典", check=False)
 @conditional_execution1("start_run_time", ['h庆典'], desc="start刷取庆典", check=False)
 @conditional_execution1("loop_run_time", ['n庆典'], desc="loop刷取庆典", check=False)
 @default(False)
 @tag_stamina_consume
 class smart_sweep(DIY_sweep):
     async def get_start_quest(self, client: pcrclient) -> List[Tuple[int, int]]: 
-        is_start_run_time, _ = await (self.get_config_instance('start_run_time').do_check(client))
         quest: List[Tuple[int, int]] = []
-        if is_start_run_time: 
-            self._log(f"刷取start关卡")
-            for tab in client.data.user_my_quest:
-                if tab.tab_name == 'start':
-                    for x in tab.skip_list:
-                        quest.append((x, tab.skip_count))
+        for name, value in zip(['start', 'start2'], ['start_run_time', 'start2_run_time']):
+            is_run_time, _ = await (self.get_config_instance(value).do_check(client))
+            if is_run_time:
+                self._log(f"刷取{name}关卡")
+                for tab in client.data.user_my_quest:
+                    if tab.tab_name == name:
+                        for x in tab.skip_list:
+                            quest.append((x, tab.skip_count))
         return quest
 
     async def get_loop_quest(self, client: pcrclient) -> List[Tuple[int, int]]:
@@ -407,12 +431,12 @@ class smart_sweep(DIY_sweep):
 '''.strip())
 @name("刷最新n图")
 @conditional_execution1("last_normal_quest_run_time", ['n庆典'])
-@multichoice("last_normal_quests_sweep", '刷取关卡', [], db.last_normal_quest_candidate)
+@LastNormalQuestConfig("last_normal_quests_sweep", "刷取关卡", [])
 @default(False)
 @tag_stamina_consume
 class last_normal_quest_sweep(DIY_sweep):
     async def get_loop_quest(self, client: pcrclient) -> List[Tuple[int, int]]:
-        last_sweep_quests: List[str] = self.get_config('last_normal_quests_sweep')
+        last_sweep_quests: List[int] = self.get_config('last_normal_quests_sweep')
         last_sweep_quests_count: int = 3
-        quest: List[Tuple[int, int]] = [(int(id.split(':')[0]), last_sweep_quests_count) for id in last_sweep_quests]
+        quest: List[Tuple[int, int]] = [(id, last_sweep_quests_count) for id in last_sweep_quests]
         return quest
