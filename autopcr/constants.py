@@ -1,5 +1,6 @@
 import os
 from distutils.util import strtobool
+import uuid
 import logging
 
 SERVER_PORT = int(os.getenv("AUTOPCR_SERVER_PORT", "13200"))
@@ -30,6 +31,8 @@ CLAN_BATTLE_FORBID_PATH = os.path.join(CONFIG_PATH, 'clan_battle_forbidden.txt')
 
 LOG_PATH = os.path.join(ROOT_DIR, 'log/')
 LOG_LEVEL = logging.INFO
+
+UUID_NAMESPACE = uuid.UUID("83a3e9e1-2690-4ff2-88bb-075ba6a6743c")
 
 # Headers
 DEFAULT_HEADERS = {
@@ -62,7 +65,6 @@ IOS_HEADERS = {
     'BATTLE-LOGIC-VERSION': '4',
     'BUNDLE-VER': '',
     'DEVICE': '1',
-    'DEVICE-ID': 'CB03A1AC-B27D-5E96-9422-CBF0F4D333D7',
     'DEVICE-NAME': 'iPad13,8',
     'EXCEL-VER': '1.0.0',
     'GRAPHICS-DEVICE-NAME': 'Apple M1',
@@ -93,7 +95,6 @@ def refresh_headers(version: str = None):
 
     DEFAULT_HEADERS['APP-VER'] = VERSION
     IOS_HEADERS['APP-VER'] = VERSION
-
 
 
 refresh_headers()

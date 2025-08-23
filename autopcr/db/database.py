@@ -67,6 +67,14 @@ class database():
             )
 
     @lazy_property
+    def caravan_buddy(self) -> Dict[int, CaravanBuddy]:
+        with self.dbmgr.session() as db:
+            return (
+                CaravanBuddy.query(db)
+                .to_dict(lambda x: x.buddy_id, lambda x: x)
+            )
+
+    @lazy_property
     def caravan_dish(self) -> Dict[int, CaravanDish]:
         with self.dbmgr.session() as db:
             return (
@@ -1190,6 +1198,22 @@ class database():
             return (
                 HatsuneItem.query(db)
                 .to_dict(lambda x: x.event_id, lambda x: x)
+            )
+
+    @lazy_property
+    def xac_story_data(self) -> Dict[int, XacStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                XacStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
+            )
+
+    @lazy_property
+    def asb_story_data(self) -> Dict[int, AsbStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                AsbStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
     @lazy_property
