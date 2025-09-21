@@ -515,10 +515,10 @@ data: {ret}\n\n'''
             password = data.get('password', "")
             if not qq or not password:
                 return "请输入QQ和密码", 400
-            if self.qq_mod:
-                from ...server import is_valid_qq
-                if not await is_valid_qq(qq):
-                    return "无效的QQ", 400
+            # if self.qq_mod:
+            #     from ...server import is_valid_qq
+            #     if not await is_valid_qq(qq):
+            #         return "无效的QQ", 400
             usermgr.create(str(qq), str(password))
             login_user(AuthUser(qq))
             return "欢迎回来，" + qq, 200
