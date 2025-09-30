@@ -97,8 +97,8 @@ daily_modules = ModuleList(
         hatsune_gacha_exchange,
         hatsune_mission_accept2,
 
-        unit_equip_enhance_up,
-        unit_skill_level_up,
+        # unit_equip_enhance_up,
+        # unit_skill_level_up,
 
         mission_receive_last,
         seasonpass_accept,
