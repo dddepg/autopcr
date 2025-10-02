@@ -54,6 +54,7 @@ sv_help = f"""
 - {prefix}查兑换角色碎片 [开换] 查询兑换特别角色的记忆碎片策略
 - {prefix}查心碎 查询缺口心碎
 - {prefix}查纯净碎片 查询缺口纯净碎片，国服六星+日服二专需求
+- {prefix}查深域进度 查询深域进度
 - {prefix}查记忆碎片 [可刷取|大师币] 查询缺口记忆碎片，可按地图可刷取或大师币商店过滤
 - {prefix}查装备 [<rank>] [fav] 查询缺口装备，rank为数字，只查询>=rank的角色缺口装备，fav表示只查询favorite的角色
 - {prefix}刷图推荐 [<rank>] [fav] 查询缺口装备的刷图推荐，格式同上
@@ -659,6 +660,10 @@ async def find_memory(botev: BotEvent):
 
 @register_tool("查纯净碎片", "get_need_pure_memory")
 async def find_pure_memory(botev: BotEvent):
+    return {}
+
+@register_tool("查深域进度", "query_deep_progress")
+async def find_query_deep_progress(botev: BotEvent):
     return {}
 
 @register_tool(f"来发十连", "gacha_start")
