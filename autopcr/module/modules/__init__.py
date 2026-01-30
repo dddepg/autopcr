@@ -1,5 +1,6 @@
 from dataclasses import field
 from typing import Any
+from .abyss import *
 from .autosweep import *
 from .box import *
 from .nologin import *
@@ -69,7 +70,11 @@ daily_modules = ModuleList(
         special_underground_skip,
         tower_cloister_sweep,
         jjc_reward,
+        abyss_quest_sweep,
+        abyss_boss_sweep,
         talent_sweep,
+        present_receive,
+        talent_sweep2,
         smart_very_hard_sweep,
         xinsui8_sweep,
         xinsui7_sweep,
@@ -79,11 +84,11 @@ daily_modules = ModuleList(
         xinsui3_sweep,
         xinsui2_sweep,
         xinsui1_sweep,
+        starcup3_sweep,
         starcup2_sweep,
         starcup1_sweep, 
         hatsune_h_sweep,
         hatsune_dear_reading,
-        present_receive,
         smart_sweep,
         mirai_very_hard_sweep,
         smart_hard_sweep,
@@ -148,7 +153,6 @@ table_modules = ModuleList(
     '表格',
     'table',
     [
-        get_need_pure_memory_box,
     ],
     hidden=True,
     visible_in_batch=True,
@@ -197,6 +201,7 @@ tool_modules = ModuleList(
     '工具',
     'tool',
     [
+        ex_equip_power_maximun,
         find_talent_quest,
         find_clan_talent_quest,
         # return_jewel,

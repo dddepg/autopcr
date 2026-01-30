@@ -75,11 +75,14 @@ class unit_story_reading(Module):
             if story.story_group_id == 1255:  # 忽略魔姬剧情
                 continue
             if (
+                story.read_process_flag and
                 story.story_id not in read_story and
                 (story.pre_story_id in read_story or now >= db.parse_time(story.force_unlock_time)) and
                 (story.pre_story_id_2 in read_story or now >= db.parse_time(story.force_unlock_time_2)) and
                 story.story_group_id in client.data.unit_love_data and 
-                client.data.unit_love_data[story.story_group_id].love_level >= story.love_level
+                client.data.unit_love_data[story.story_group_id].love_level >= story.love_level and
+                apiclient.datetime >= db.parse_time(story.start_time) and
+                apiclient.datetime <= db.parse_time(story.end_time)
                 ):
                 await client.read_story(story.story_id)
                 read_story.add(story.story_id)
@@ -188,9 +191,15 @@ class hatsune_sub_story_reading(Module):
                 self._warn(f"暂不支持的活动{db.event_name[sub_storys.event_id]}")
                 continue
 
+            if reader.special:
+                await reader.special_read(sub_storys, self._log)
+                continue
+
+            await reader.prepare()
+
             if any(sub_story.status == eEventSubStoryStatus.ADDED for sub_story in sub_storys.sub_story_info_list):
                 await reader.confirm()
-            for sub_story in sub_storys.sub_story_info_list:
+            for sub_story in await reader.sort_by_time(sub_storys.sub_story_info_list):
                 if sub_story.status == eEventSubStoryStatus.UNREAD and reader.is_readable(sub_story.sub_story_id):
                     await reader.read(sub_story.sub_story_id)
                     self._log(f"阅读了{reader.title(sub_story.sub_story_id)}")

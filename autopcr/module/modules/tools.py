@@ -2,10 +2,10 @@ from typing import List, Set
 
 from ...util.ilp_solver import memory_use_average
 
-from ...model.common import ChangeRarityUnit, DeckListData, GachaPointInfo, GrandArenaHistoryDetailInfo, GrandArenaHistoryInfo, GrandArenaSearchOpponent, ProfileUserInfo, RankingSearchOpponent, RedeemUnitInfo, RedeemUnitSlotInfo, VersusResult, VersusResultDetail
+from ...model.common import ChangeRarityUnit, DeckListData, GachaPointInfo, GrandArenaHistoryDetailInfo, GrandArenaHistoryInfo, GrandArenaSearchOpponent, ProfileUserInfo, RankingSearchOpponent, RedeemUnitInfo, RedeemUnitSlotInfo, UnitData, UnitDataLight, VersusResult, VersusResultDetail
 from ...model.responses import GachaIndexResponse, PsyTopResponse
 from ...db.models import GachaExchangeLineup
-from ...model.custom import ArenaQueryResult, GachaReward, ItemType
+from ...model.custom import ArenaQueryResult, GachaReward, ItemType, eRedeemUnitUnlockCondition
 from ..modulebase import *
 from ..config import *
 from ...core.pcrclient import pcrclient
@@ -37,6 +37,7 @@ class remove_cb_support(Module):
 @booltype('redeem_unit_swap_do', '开换', False)
 @description('计算兑换对应角色所需的3000碎片的最优使用方案，使得剩余碎片的盈余值的最大值最小')
 class redeem_unit_swap(Module):
+
     async def do_task(self, client: pcrclient):
         do = self.get_config('redeem_unit_swap_do')
 
@@ -57,17 +58,27 @@ class redeem_unit_swap(Module):
 
             for slot_info in info.slot_info:
                 db_info = db.get_redeem_unit_slot_info(unit_id,slot_info.slot_id)
-                if slot_info.slot_id == 1:
-                    self._log(f"已使用{slot_info.register_num}碎片")
-                    use_piece = int(db_info.consume_num) - slot_info.register_num
-                elif slot_info.slot_id == 2:
-                    self._log(f"已使用{slot_info.register_num}玛那")
-                elif slot_info.slot_id == 3:
+                if db_info.condition_category == eRedeemUnitUnlockCondition.UNLOCK_UNIT:
                     if db_info.condition_id not in client.data.unit:
                         raise AbortError(f"未解锁{db.get_unit_name(db_info.condition_id)}，无法兑换{db.get_unit_name(unit_id)}")
-                elif slot_info.slot_id == 4:
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.VIEWED_STORY:
                     if db_info.condition_id not in client.data.read_story_ids:
                         raise AbortError(f"未阅读{db_info.condition_id}，无法兑换{db.get_unit_name(unit_id)}")
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.GOLD:
+                    self._log(f"已使用{slot_info.register_num}玛那")
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.CURRENCY:
+                    self._log(f"已使用{slot_info.register_num}??")
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.MEMORY_PIECE:
+                    self._log(f"已使用{slot_info.register_num}碎片")
+                    use_piece = int(db_info.consume_num) - slot_info.register_num
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.SUPER_MEMORY_PIECE:
+                    self._log(f"已使用{slot_info.register_num}纯净碎片")
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.JEWEL:
+                    self._log(f"已使用{slot_info.register_num}宝石")
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.EQUIP:
+                    self._log(f"已使用{slot_info.register_num}装备")
+                elif db_info.condition_category == eRedeemUnitUnlockCondition.EQUIP_MATERIAL:
+                    self._log(f"已使用{slot_info.register_num}装备碎片")
                 else:
                     raise ValueError(f"未知的兑换条件{slot_info.slot_id}")
 
@@ -90,13 +101,14 @@ class redeem_unit_swap(Module):
 
             if do:
                 for slot_info in info.slot_info:
-                    if slot_info.slot_id == 1:
+                    db_info = db.get_redeem_unit_slot_info(unit_id,slot_info.slot_id)
+                    if db_info.condition_category == eRedeemUnitUnlockCondition.MEMORY_PIECE:
                         memory_use = Counter({item[i]: res[i] for i in id if res[i] > 0})
                         if memory_use:
                             self._log(f"使用了角色碎片")
                             ret = await client.unit_register_item(unit_id, slot_info.slot_id, memory_use, slot_info.register_num)
                             slot_info.register_num = ret.register_num
-                    elif slot_info.slot_id == 2:
+                    elif db_info.condition_category == eRedeemUnitUnlockCondition.GOLD:
                         info = db.get_redeem_unit_slot_info(unit_id,slot_info.slot_id)
                         total_mana = int(info.consume_num) - slot_info.register_num
                         if not (await client.prepare_mana(total_mana)):
@@ -107,6 +119,11 @@ class redeem_unit_swap(Module):
                             ret = await client.unit_register_item(unit_id, slot_info.slot_id, Counter({(eInventoryType.Gold, info.condition_id): mana}), slot_info.register_num)
                             slot_info.register_num = ret.register_num
                             total_mana -= mana
+                    else:
+                        if db_info.condition_category in [eRedeemUnitUnlockCondition.UNLOCK_UNIT,
+                                                        eRedeemUnitUnlockCondition.VIEWED_STORY]:
+                            continue
+                        raise AbortError(f"未实现的兑换条件{db_info.condition_category}")
 
                 self._log(f"兑换{db.get_unit_name(unit_id)}")
                 await client.unit_unlock_redeem_unit(unit_id)
@@ -372,17 +389,71 @@ class gacha_exchange_chara(Module):
 @name('会战支援数据')
 @default(True)
 class get_clan_support_unit(Module):
+    async def serialize_unit_info(self, unit_data: Union[UnitData, UnitDataLight]) -> Tuple[bool, str]:
+        info = []
+        ok = True
+        def add_info(prefix, cur, expect = None):
+            if expect:
+                nonlocal ok
+                info.append(f'{prefix}:{cur}/{expect}')
+                ok &= (cur == expect)
+            else:
+                info.append(f'{prefix}:{cur}')
+        unit_id = unit_data.id
+        add_info("等级", unit_data.unit_level, max(unit_data.unit_level, db.team_max_level))
+        if unit_data.battle_rarity:
+            add_info("星级", f"{unit_data.battle_rarity}-{unit_data.unit_rarity}")
+        else:
+            add_info("星级", f"{unit_data.unit_rarity}")
+        add_info("品级", unit_data.promotion_level, db.equip_max_rank)
+        for id, union_burst in enumerate(unit_data.union_burst):
+            if union_burst.skill_level:
+                add_info(f"ub{id}", union_burst.skill_level, unit_data.unit_level)
+        for id, skill in enumerate(unit_data.main_skill):
+            if skill.skill_level:
+                add_info(f"skill{id}", skill.skill_level, unit_data.unit_level)
+        for id, skill in enumerate(unit_data.ex_skill):
+            if skill.skill_level:
+                add_info(f"ex{id}", skill.skill_level, unit_data.unit_level)
+        equip_info = []
+        for id, equip in enumerate(unit_data.equip_slot):
+            equip_id = getattr(db.unit_promotion[unit_id][unit_data.promotion_level], f'equip_slot_{id + 1}')
+            if not equip.is_slot:
+                if equip_id != 999999:
+                    equip_info.append('-')
+                    ok = False
+                else:
+                    equip_info.append('*')
+            else:
+                star = db.get_equip_star_from_pt(equip_id, equip.enhancement_pt)
+                ok &= (star == 5)
+                equip_info.append(str(star))
+        equip_info = '/'.join(equip_info)
+        add_info("装备", equip_info)
+
+        for id, equip in enumerate(unit_data.unique_equip_slot):
+            equip_slot = id + 1
+            have_unique = (equip_slot in db.unit_unique_equip and unit_id in db.unit_unique_equip[equip_slot])
+            max_level = 0 if not have_unique else db.unique_equipment_max_level[equip_slot]
+            if have_unique:
+                if not equip.is_slot:
+                    add_info(f"专武{id}", '-', max_level)
+                else:
+                    add_info(f"专武{id}", db.get_unique_equip_level_from_pt(equip_slot, equip.enhancement_pt), max_level)
+
+        return ok, ' '.join(info)
+
     async def do_task(self, client: pcrclient):
         await client.get_clan_battle_top(1, client.data.get_shop_gold(eSystemId.CLAN_BATTLE_SHOP))
         unit_list = await client.get_clan_battle_support_unit_list()
         msg = []
         for unit in unit_list.support_unit_list:
-            strongest, info = await client.serialize_unit_info(unit.unit_data)
+            strongest, info = await self.serialize_unit_info(unit.unit_data)
             msg.append((unit.unit_data.id, strongest, unit.owner_name, info))
 
         for unit in client.data.dispatch_units:
             if unit.position == eClanSupportMemberType.CLAN_BATTLE_SUPPORT_UNIT_1 or unit.position == eClanSupportMemberType.CLAN_BATTLE_SUPPORT_UNIT_2:
-                strongest, info = await client.serialize_unit_info(client.data.unit[unit.unit_id])
+                strongest, info = await self.serialize_unit_info(client.data.unit[unit.unit_id])
                 msg.append((unit.unit_id, strongest, client.user_name, info))
 
         msg = sorted(msg, key=lambda x:(x[0], -x[1]))
@@ -436,35 +507,20 @@ class get_need_pure_memory(Module):
         pure_gap = client.data.get_pure_memory_demand_gap()
         target = Counter()
         need_list = []
+        header = []
+        data = {}
         for unit in unique_equip_2_pure_memory_id:
             kana = db.unit_data[unit].kana
             target[kana] += 150 if unit not in client.data.unit or len(client.data.unit[unit].unique_equip_slot) < 2 or not client.data.unit[unit].unique_equip_slot[1].is_slot else 0
             own = -sum(pure_gap[db.unit_to_pure_memory[unit]] if unit in db.unit_to_pure_memory else 0 for unit in db.unit_kana_ids[kana])
             need_list.append(((eInventoryType.Unit, unit), target[kana] - own))
-        msg = {}
-        msg = '\n'.join([f'{db.get_inventory_name_san(item[0])}: {"缺少" if item[1] > 0 else "盈余"}{abs(item[1])}片' for item in need_list])
-        self._log(msg)
-
-@description('去除六星需求后，专二所需纯净碎片减去库存的结果')
-@name('获取纯净碎片缺口(表格版)')
-@notlogin(check_data = True)
-@default(True)
-class get_need_pure_memory_box(Module):
-    async def do_task(self, client: pcrclient):
-        from .autosweep import unique_equip_2_pure_memory_id
-        pure_gap = client.data.get_pure_memory_demand_gap()
-        target = Counter()
-        need_list = []
-        header = []
-        data = {}
-        for unit in unique_equip_2_pure_memory_id:
-            kana = db.unit_data[unit].kana
-            target[kana] += 150 if unit not in client.data.unit or len(client.data.unit[unit].unique_equip_slot) < 2 or not client.data.unit[unit].unique_equip_slot[1].is_slot else 150 - client.data.unit[unit].unique_equip_slot[1].enhancement_pt
-            own = -sum(pure_gap[db.unit_to_pure_memory[unit]] if unit in db.unit_to_pure_memory else 0 for unit in db.unit_kana_ids[kana])
-            need_list.append((unit, target[kana] - own))
             unit_name = db.get_unit_name(unit)
             header.append(unit_name)
             data[unit_name] = target[kana] - own
+
+        msg = {}
+        msg = '\n'.join([f'{db.get_inventory_name_san(item[0])}: {"缺少" if item[1] > 0 else "盈余"}{abs(item[1])}片' for item in need_list])
+        self._log(msg)
 
         self._table_header(header)
         self._table(data)
@@ -593,8 +649,8 @@ class get_normal_quest_recommand(Module):
 #         self._log(msg)
 
 @description('从指定面板的指定队开始清除指定数量的编队')
-@inttype("clear_team_num", "队伍数", 1, [i for i in range(1, 11)])
-@inttype("clear_party_start_num", "初始队伍", 1, [i for i in range(1, 11)])
+@inttype("clear_team_num", "队伍数", 1, [i for i in range(1, 21)])
+@inttype("clear_party_start_num", "初始队伍", 1, [i for i in range(1, 21)])
 @inttype("clear_tab_start_num", "初始面板", 1, [i for i in range(1, 7)])
 @name('清除编队')
 class clear_my_party(Module):
@@ -605,7 +661,7 @@ class clear_my_party(Module):
         for _ in range(number):
 
             party_number += 1
-            if party_number == 11:
+            if party_number == 21:
                 tab_number += 1
                 party_number = 1
                 if tab_number >= 6:

@@ -230,13 +230,14 @@ class investigate_sweep(Module):
             raise SkipError("今日强制不刷取")
         times = self.value(self.is_double_drop(client))
         try:
-            result = await client.quest_skip_aware(self.quest_id(), times, True, True)
+            result, clear_count, no_stamina = await client.quest_skip_aware(self.quest_id(), times, True, True)
         except AbortError as e:
-            if str(e).endswith("体力不足"):
-                raise SkipError(str(e))
             raise e
+        if no_stamina:
+            raise SkipError(f"{db.get_quest_name(self.quest_id())}体力不足")
+
         msg = await client.serialize_reward_summary(result)
-        self._log(f"重置{times // 5 - 1}次，获得了{msg}")
+        self._log(f"重置{clear_count // 5 - 1}次，刷取了{clear_count}次，获得了{msg}")
 
 class xinsui_sweep(investigate_sweep):
     def is_double_drop(self, client: pcrclient) -> bool:
@@ -327,6 +328,14 @@ class xinsui2_sweep(xinsui_sweep):
 class xinsui1_sweep(xinsui_sweep):
     def quest_id(self) -> int:
         return 18001001
+
+@singlechoice("starcup3_sweep_campaign_times", "庆典次数", 5, [0, 5, 10, 15, 20])
+@singlechoice("starcup3_sweep_times", "非庆典次数", 5, [0, 5, 10, 15, 20])
+@name('刷取星球杯3')
+@default(False)
+class starcup3_sweep(starcup_sweep):
+    def quest_id(self) -> int:
+        return 19001003
 
 @singlechoice("starcup2_sweep_campaign_times", "庆典次数", 5, [0, 5, 10, 15, 20])
 @singlechoice("starcup2_sweep_times", "非庆典次数", 5, [0, 5, 10, 15, 20])

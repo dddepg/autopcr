@@ -35,6 +35,15 @@ class UnitRarity(models.UnitRarity):
         return UnitAttribute.load(self, suf='_growth') * level
 
 @method
+class ExEquipmentDatum(models.ExEquipmentDatum):
+    def get_unit_attribute(self, level: int) -> UnitAttribute:
+        from .database import db
+        min_val = UnitAttribute.load(self, pre='default_')
+        max_val = UnitAttribute.load(self, pre='max_')
+        max_rank = db.get_ex_equip_max_rank(self.ex_equipment_id)
+        return min_val + (max_val - min_val) * (level / db.get_ex_equip_max_star(self.ex_equipment_id, max_rank))
+
+@method
 class EquipmentDatum(models.EquipmentDatum):
     def get_unit_attribute(self) -> UnitAttribute:
         return UnitAttribute.load(self)
@@ -168,3 +177,67 @@ class TravelQuestDatum(models.TravelQuestDatum):
         yield Reward(eInventoryType.ExtraEquip, self.main_reward_3, 1, 1)
         yield Reward(eInventoryType.ExtraEquip, self.main_reward_4, 1, 1)
         yield Reward(eInventoryType.ExtraEquip, self.main_reward_5, 1, 1)
+
+@method
+class TalentSkillNode(models.TalentSkillNode):
+    def get_unit_attribute(self) -> UnitAttribute:
+        return UnitAttribute.load(self)
+
+    def pre_node_ids(self) -> Iterator[int]:
+        if self.pre_node_1 != 0:
+            yield self.pre_node_1
+        if self.pre_node_2 != 0:
+            yield self.pre_node_2
+        if self.pre_node_3 != 0:
+            yield self.pre_node_3
+        if self.pre_node_4 != 0:
+            yield self.pre_node_4
+
+    def is_joined_node(self) -> bool:
+        return len(set(self.pre_node_ids())) >= 3
+
+    def pos(self) -> str:
+        if self.pos_x == 2:
+            return "左"
+        elif self.pos_x == 5:
+            return "中"
+        elif self.pos_x == 8:
+            return "右"
+        return "未知"
+
+@method
+class TeamSkillNode(models.TeamSkillNode):
+    def enhance_level_ids(self) -> Iterator[int]:
+        if self.enhance_level_id_1 != 0:
+            yield self.enhance_level_id_1
+        if self.enhance_level_id_2 != 0:
+            yield self.enhance_level_id_2
+        if self.enhance_level_id_3 != 0:
+            yield self.enhance_level_id_3
+        if self.enhance_level_id_4 != 0:
+            yield self.enhance_level_id_4
+        if self.enhance_level_id_5 != 0:
+            yield self.enhance_level_id_5
+
+@method
+class TprPanelDatum(models.TprPanelDatum):
+    def get_correct_parts(self):
+        if self.correct_parts_id_1 != 0:
+            yield self.correct_parts_id_1
+        if self.correct_parts_id_2 != 0:
+            yield self.correct_parts_id_2
+        if self.correct_parts_id_3 != 0:
+            yield self.correct_parts_id_3
+        if self.correct_parts_id_4 != 0:
+            yield self.correct_parts_id_4
+    
+    def get_another_parts(self):
+        if self.another_parts_id_1 != 0:
+            yield self.another_parts_id_1
+        if self.another_parts_id_2 != 0:
+            yield self.another_parts_id_2
+        if self.another_parts_id_3 != 0:
+            yield self.another_parts_id_3
+        if self.another_parts_id_4 != 0:
+            yield self.another_parts_id_4
+

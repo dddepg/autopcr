@@ -121,6 +121,14 @@ class pcrclient(apiclient):
         req.surplus_dish_list = surplus_dish_list
         return await self.request(req)
 
+    async def caravan_shortcut_choice(self, season_id: int, block_id: int, is_open: int, current_currency_num: int):
+        req = CaravanShortcutChoiceRequest()
+        req.season_id = season_id
+        req.block_id = block_id
+        req.is_open = is_open
+        req.current_currency_num = current_currency_num
+        return await self.request(req)
+
     async def caravan_spots_choice(self, season_id: int, choice: int):
         req = CaravanSpotsChoiceRequest()
         req.season_id = season_id
@@ -724,44 +732,85 @@ class pcrclient(apiclient):
         await self.story_check(story_id)
         return await self.story_view(story_id)
 
+    async def tpr_register_success(self, panel_id: int, correct_type: int, parts_id_list: List[int]):
+        req = SubStoryTprRegisterSuccessRequest()
+        req.panel_id = panel_id
+        req.correct_type = correct_type
+        req.parts_id_list = parts_id_list
+        return await self.request(req)
+
+    async def read_lss_story(self, sub_story_id: int):
+        req = SubStoryLssReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        req.skip_info = StorySkipInfo(
+                skip_type = eStorySkipType.MENU_SKIP,
+                scroll_coordinate = ""
+        )
+        return await self.request(req)
+
+    async def read_tpr_story(self, sub_story_id: int):
+        req = SubStoryTprReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        return await self.request(req)
+
+    async def apg_story_top(self):
+        req = SubStoryApgTopRequest()
+        return await self.request(req)
+
+    async def read_apg_story(self, sub_story_id: int):
+        req = SubStoryApgReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        return await self.request(req)
+
+    async def draw_fpc_story(self, period: eFpcPeriod, fpc_operation_type: eFpcOperationType):
+        req = SubStoryFpcDrawStoryRequest()
+        req.period = period
+        req.fpc_operation_type = fpc_operation_type
+        return await self.request(req)
+
+    async def read_fpc_story(self, sub_story_id: int):
+        req = SubStoryFpcReadStoryRequest()
+        req.sub_story_id = sub_story_id
+        return await self.request(req)
+
     async def read_ais_story(self, sub_story_id: int):
         req = SubStoryAisReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def confirm_ais_story(self):
         req = SubStoryAisConfirmRequest()
-        await self.request(req)
+        return await self.request(req)
 
     async def read_nyd_story(self, sub_story_id: int):
         req = SubStoryNydReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_xac_story(self, sub_story_id: int):
         req = SubStoryXacReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_asb_story(self, sub_story_id: int):
         req = SubStoryAsbReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_wtm_story(self, sub_story_id: int):
         req = SubStoryWtmReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_wts_story(self, sub_story_id: int):
         req = SubStoryWtsReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_bmy_story(self, sub_story_id: int):
         req = SubStoryBmyReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def put_mme_piece(self, sub_story_id: int):
         req = SubStoryMmePutPieceRequest()
@@ -776,66 +825,66 @@ class pcrclient(apiclient):
     async def read_xeh_story(self, sub_story_id: int):
         req = SubStoryXehReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_lsv_story(self, sub_story_id: int):
         req = SubStoryLsvReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_dsb_story(self, sub_story_id: int):
         req = SubStoryDsbReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_ysn_story(self, sub_story_id: int):
         req = SubStoryYsnReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_nop_story(self, sub_story_id: int):
         req = SubStoryNopReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_mhp_story(self, sub_story_id: int):
         req = SubStoryMhpReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_svd_story(self, sub_story_id: int):
         req = SubStorySvdReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_ssp_story(self, sub_story_id: int):
         req = SubStorySspReadSspStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_ske_story(self, sub_story_id: int):
         req = SubStorySkeReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_dvs_story(self, sub_story_id: int):
         req = SubStoryDvsReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_won_story(self, sub_story_id: int):
         req = SubStoryWonReadStoryRequest()
         req.sub_story_id_list = [sub_story_id]
-        await self.request(req)
+        return await self.request(req)
 
     async def confirm_ske_story(self):
         req = SubStorySkeConfirmRequest()
-        await self.request(req)
+        return await self.request(req)
 
     async def read_lto_story(self, sub_story_id: int):
         req = SubStoryLtoReadStoryRequest()
         req.sub_story_id = sub_story_id
-        await self.request(req)
+        return await self.request(req)
 
     async def read_hatsune_dear(self, event_id: int, story_id: int):
         req = HatsuneDearFinishRequest()
@@ -1107,6 +1156,30 @@ class pcrclient(apiclient):
         req.random_count = times
         return await self.request(req)
 
+    async def abyss_top(self, abyss_id: int):
+        req = AbyssTopRequest()
+        req.abyss_id = abyss_id
+        req.is_first = 1
+        return await self.request(req)
+
+    async def abyss_boss_skip(self, abyss_id: int, boss_id: int, enemy_index: int, exec_skip_num: int, current_boss_ticket_num: int):
+        req = AbyssBossSkipRequest()
+        req.abyss_id = abyss_id
+        req.boss_id = boss_id
+        req.enemy_index = enemy_index
+        req.exec_skip_num = exec_skip_num
+        req.current_skip_ticket_num = self.data.get_inventory((eInventoryType.Item, 23001))
+        req.current_boss_ticket_num = current_boss_ticket_num
+        return await self.request(req)
+
+    async def abyss_quest_skip(self, quest_id: int, times: int):
+        req = AbyssQuestSkipMultipleRequest()
+        req.abyss_id = db.quest_info[quest_id].abyss_id
+        req.skip_list = [QuestSkipInfo(quest_id=quest_id, skip_count=times)]
+        req.current_ticket_num = self.data.get_inventory((eInventoryType.Item, 23001))
+        req.exec_type = 1 # for single 2 for multiple
+        return await self.request(req)
+
     async def talent_quest_skip(self, quest_id: int, use_ticket_num: int):
         req = TalentQuestSkipRequest()
         req.quest_id = quest_id
@@ -1270,59 +1343,62 @@ class pcrclient(apiclient):
             result.append(f"{db.get_inventory_name_san(target)}x0({self.data.get_inventory(target)})")
         return '\n'.join(result) if result else "无"
 
-    async def serialize_unit_info(self, unit_data: Union[UnitData, UnitDataLight]) -> Tuple[bool, str]:
-        info = []
-        ok = True
-        def add_info(prefix, cur, expect = None):
-            if expect:
-                nonlocal ok
-                info.append(f'{prefix}:{cur}/{expect}')
-                ok &= (cur == expect)
-            else:
-                info.append(f'{prefix}:{cur}')
-        unit_id = unit_data.id
-        add_info("等级", unit_data.unit_level, db.team_max_level)
-        if unit_data.battle_rarity:
-            add_info("星级", f"{unit_data.battle_rarity}-{unit_data.unit_rarity}")
-        else:
-            add_info("星级", f"{unit_data.unit_rarity}")
-        add_info("品级", unit_data.promotion_level, db.equip_max_rank)
-        for id, union_burst in enumerate(unit_data.union_burst):
-            if union_burst.skill_level:
-                add_info(f"ub{id}", union_burst.skill_level, unit_data.unit_level)
-        for id, skill in enumerate(unit_data.main_skill):
-            if skill.skill_level:
-                add_info(f"skill{id}", skill.skill_level, unit_data.unit_level)
-        for id, skill in enumerate(unit_data.ex_skill):
-            if skill.skill_level:
-                add_info(f"ex{id}", skill.skill_level, unit_data.unit_level)
-        equip_info = []
-        for id, equip in enumerate(unit_data.equip_slot):
-            equip_id = getattr(db.unit_promotion[unit_id][unit_data.promotion_level], f'equip_slot_{id + 1}')
-            if not equip.is_slot:
-                if equip_id != 999999:
-                    equip_info.append('-')
-                    ok = False
-                else:
-                    equip_info.append('*')
-            else:
-                star = db.get_equip_star_from_pt(equip_id, equip.enhancement_pt)
-                ok &= (star == 5)
-                equip_info.append(str(star))
-        equip_info = '/'.join(equip_info)
-        add_info("装备", equip_info)
+    def unit_info_to_dict(self, unit_id: int) -> Dict:
+        unit_data = {
+            "星级": "无",
+            "等级": "无",
+            "品级": "无",
+            "装备": "无",
+            "UB": 0,
+            "S1": 0,
+            "S2": 0,
+            "EX": 0,
+            "剧情": "无",
+            "专武1": "无",
+            "专武2": "无",
+            "普碎数": "无",
+            "金碎数": "无",
+        }
 
-        for id, equip in enumerate(unit_data.unique_equip_slot):
-            equip_slot = id + 1
-            have_unique = (equip_slot in db.unit_unique_equip and unit_id in db.unit_unique_equip[equip_slot])
-            max_level = 0 if not have_unique else db.unique_equipment_max_level[equip_slot]
-            if have_unique:
-                if not equip.is_slot:
-                    add_info(f"专武{id}", '-', max_level)
-                else:
-                    add_info(f"专武{id}", db.get_unique_equip_level_from_pt(equip_slot, equip.enhancement_pt), max_level)
-        
-        return ok, ' '.join(info)
+        read_story = set(self.data.read_story_ids)
+        if unit_id in self.data.unit:
+            unitinfo = self.data.unit[unit_id]
+            rank = f"R{unitinfo.promotion_level}"
+            equip = ''.join('-' if not solt.is_slot else str(solt.enhancement_level) for solt in unitinfo.equip_slot)
+            kizuna_unit = set()
+            for story in db.chara2story[unit_id]:
+                if story.story_id in db.story_detail:
+                    kizuna_unit.add(db.story_detail[story.story_id].requirement_id)
+
+            love = []
+            for other in kizuna_unit:
+                if other not in db.unlock_unit_condition: continue
+                unit_name = db.get_unit_name(other)
+                other_id = other // 100
+                love_level = self.data.unit_love_data[other_id].love_level if other_id in self.data.unit_love_data else 0
+                unit_story = [story.story_id for story in db.unit_story if story.story_group_id == other_id]
+                total_storys = len(unit_story)
+                read_storys = len([story for story in unit_story if story in read_story])
+                love.append(f"{unit_name}好感{love_level}({read_storys}/{total_storys})")
+            love_str = '\n'.join(love) if love else "无"
+
+            unit_data.update({
+                "星级": f"{unitinfo.unit_rarity}★",
+                "等级": unitinfo.unit_level,
+                "品级": rank,
+                "装备": equip,
+                "UB": unitinfo.union_burst[0].skill_level if unitinfo.union_burst else "无",
+                "S1": unitinfo.main_skill[0].skill_level if unitinfo.main_skill else "无",
+                "S2": unitinfo.main_skill[1].skill_level if len(unitinfo.main_skill) > 1 else "无",
+                "EX": unitinfo.ex_skill[0].skill_level if unitinfo.ex_skill else "无",
+                "剧情": love_str,
+                "专武1": "未实装" if not unitinfo.unique_equip_slot else "无" if not unitinfo.unique_equip_slot[0].is_slot else unitinfo.unique_equip_slot[0].enhancement_level,
+                "专武2": "未实装" if len(unitinfo.unique_equip_slot) < 2 else "无" if not unitinfo.unique_equip_slot[1].is_slot else unitinfo.unique_equip_slot[1].enhancement_level,
+                "普碎数": self.data.get_inventory((eInventoryType.Item, db.unit_to_memory[unit_id])) if unit_id in db.unit_to_memory else "无",
+                "金碎数": self.data.get_inventory((eInventoryType.Item, db.unit_to_pure_memory[unit_id])) if unit_id in db.unit_to_pure_memory else "无",
+            })
+
+        return unit_data
 
     async def recover_challenge(self, quest: int):
         req = QuestRecoverChallengeRequest()
@@ -1352,7 +1428,7 @@ class pcrclient(apiclient):
             (quest in db.tower_quest and self.data.tower_status and self.data.tower_status.cleared_floor_num >= db.tower_quest[quest].floor_num)
         )
 
-    async def quest_skip_aware(self, quest: int, times: int, recover: bool = False, is_total: bool = False):
+    async def quest_skip_aware(self, quest: int, times: int, recover: bool = False, is_total: bool = False) -> Tuple[List[InventoryInfo], int, bool]:
         name = db.get_quest_name(quest)
         if db.is_hatsune_quest(quest):
             if not quest in db.quest_to_event:
@@ -1376,6 +1452,14 @@ class pcrclient(apiclient):
                 daily_clear_count = 0,
                 daily_recovery_count = 0,
             ))
+        elif db.is_abyss_quest(quest):
+            if quest not in self.data.cleared_abyss_quests:
+                raise AbortError(f"任务{name}未通关或不存在")
+            qinfo = self.data.abyss_quest_info.get(quest, AbyssDailyClearCountList(
+                quest_id = quest,
+                daily_clear_count = 0,
+            ))
+            qinfo.__dict__['daily_recovery_count'] = 0
         else:
             if not quest in self.data.quest_dict:
                 raise AbortError(f"任务{name}未通关或不存在")
@@ -1387,26 +1471,47 @@ class pcrclient(apiclient):
         info = db.quest_info[quest]
         if db.is_talent_quest(quest): # fix
             setattr(info, 'daily_limit', self.data.settings.talent_quest.daily_clear_limit_count)
+        elif db.is_abyss_quest(quest):
+            setattr(info, 'daily_limit', self.data.settings.abyss.daily_clear_limit_count)
 
         stamina_coefficient = self.data.get_quest_stamina_half_campaign_times(quest)
         if not stamina_coefficient: stamina_coefficient = 100
         result: List[InventoryInfo] = []
-        async def skip(times):
+        clear_count = 0
+        async def skip(times) -> Tuple[bool, List[InventoryInfo]]:
             while self.data.stamina < int(math.floor((info.stamina * (stamina_coefficient / 100)))) * times:
                 if self.stamina_recover_cnt > self.data.recover_stamina_exec_count:
                     await self.recover_stamina()
                 else:
-                    raise AbortError(f"任务{name}体力不足")
+                    return True, []
             if db.is_shiori_quest(quest):
                 event = db.quest_to_event[quest].event_id
-                return await self.shiori_quest_skip(event, quest, times)
+                resp = await self.shiori_quest_skip(event, quest, times)
             elif db.is_hatsune_quest(quest):
                 event = db.quest_to_event[quest].event_id
-                return await self.hatsune_quest_skip(event, quest, times)
+                resp = await self.hatsune_quest_skip(event, quest, times)
             elif db.is_talent_quest(quest):
-                return await self.talent_quest_skip(quest, times)
+                resp = await self.talent_quest_skip(quest, times)
+            elif db.is_abyss_quest(quest):
+                resp = await self.abyss_quest_skip(quest, times)
             else:
-                return await self.quest_skip(quest, times)
+                resp = await self.quest_skip(quest, times)
+
+            nonlocal clear_count
+            clear_count += times
+            result = []
+            if resp.quest_result_list:
+                for result_list in resp.quest_result_list:
+                    if hasattr(result_list, 'quest_result'):
+                        for quest_result in result_list.quest_result:
+                            result = result + quest_result.reward_list
+                    else:
+                        result = result + result_list.reward_list
+            if resp.bonus_reward_list:
+                result = result + resp.bonus_reward_list
+            return False, result
+
+        no_stamina = False
         if info.daily_limit:
             if is_total:
                 times -= qinfo.daily_clear_count
@@ -1423,24 +1528,19 @@ class pcrclient(apiclient):
                         await self.recover_challenge(quest)
                     remain = info.daily_limit
                 t = min(times, remain)
-                resp = await skip(t)
-                if resp.quest_result_list:
-                    for result_list in resp.quest_result_list:
-                        result = result + result_list.reward_list
-                if resp.bonus_reward_list:
-                    result = result + resp.bonus_reward_list
-                    
+                no_stamina, resp = await skip(t)
+                if no_stamina:
+                    break
+
+                result = result + resp
+
                 times -= t
                 remain -= t
         else:
-            resp = await skip(times)
-            if resp.quest_result_list:
-                for result_list in resp.quest_result_list:
-                    result = result + result_list.reward_list
-            if resp.bonus_reward_list:
-                result = result + resp.bonus_reward_list
+            no_stamina, resp = await skip(times)
+            result = result + resp
 
-        return result
+        return result, clear_count, no_stamina
 
     async def refresh(self):
         req = HomeIndexRequest()

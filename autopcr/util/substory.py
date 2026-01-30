@@ -1,4 +1,10 @@
-from typing import Union
+from enum import IntEnum
+from typing import Callable, List, Union
+
+from ..model.enums import eFpcOperationType, eFpcPeriod
+from ..model.enums import eEventSubStoryStatus
+
+from .linq import flow
 from ..core.pcrclient import pcrclient
 from ..core.apiclient import apiclient
 from ..model.common import EventSubStory
@@ -16,6 +22,7 @@ def EventId(event_id: int):
 class SubStoryReader:
 
     client: pcrclient
+    special: bool = False
 
     def is_readable(self, sub_story_id: int) -> bool:
         return True # it seems to be readable when it appear in the substory list
@@ -25,7 +32,12 @@ class SubStoryReader:
     def title(self, sub_story_id: int) -> str: ...
     async def read(self, sub_story_id: int): ...
     async def place_piece(self, sub_story_id: int): ...
+    async def special_read(self, sub_storys: List[EventSubStory], _log: Callable): ...
     async def confirm(self): ...
+    async def prepare(self):
+        pass
+    async def sort_by_time(self, sub_story_ids: List[EventSubStory]) -> List[EventSubStory]:
+        return sub_story_ids
 
     def __init__(self, client: pcrclient):
         self.client = client
@@ -34,6 +46,109 @@ def GetSubStoryReader(sub_story_data: EventSubStory, client: pcrclient) -> Union
     if sub_story_data.event_id in constructor:
         return constructor[sub_story_data.event_id](client)
     return None
+
+@EventId(10150)
+class lss_substory(SubStoryReader):
+
+    def title(self, sub_story_id: int) -> str:
+        return db.lss_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.story_check(sub_story_id)
+        await self.client.read_lss_story(sub_story_id)
+
+@EventId(10148)
+class tpr_substory(SubStoryReader):
+    special = True
+
+    def title(self, sub_story_id: int) -> str:
+        return db.tpr_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_tpr_story(sub_story_id)
+
+    async def special_read(self, sub_storys: EventSubStory, _log: Callable):
+        all_ids = set(s.sub_story_id for s in sub_storys.sub_story_info_list)
+        unread_ids = set(s.sub_story_id for s in sub_storys.sub_story_info_list if s.status == eEventSubStoryStatus.UNREAD)
+
+        if unread_ids:
+            for story_id in unread_ids:
+                await self.client.story_check(story_id)
+                await self.client.read_tpr_story(story_id)
+                _log(f'阅读了{self.title(story_id)}')
+            unread_ids.clear()
+
+        for panel in db.tpr_panel_data:
+            panel_data = db.tpr_panel_data[panel]
+            for i, story_id in enumerate([panel_data.correct_sub_story_id, panel_data.another_sub_story_id], start=1):
+                if story_id in all_ids:
+                    continue
+                correct_parts = panel_data.get_correct_parts() if i == 1 else panel_data.get_another_parts()
+                correct_parts = list(correct_parts)
+                if not correct_parts:
+                    continue
+                resp = await self.client.tpr_register_success(panel, i, correct_parts)
+                unread_ids |= set(s.sub_story_id for s in resp.unlock_sub_story_info_list if s.status == eEventSubStoryStatus.UNREAD)
+                _log(f'完成了第{panel}面板的{"" if i == 1 else "隐藏"}拼图')
+
+        if unread_ids:
+            for story_id in unread_ids:
+                await self.client.story_check(story_id)
+                await self.client.read_tpr_story(story_id)
+                _log(f'阅读了{self.title(story_id)}')
+            unread_ids.clear()
+
+@EventId(10146)
+class apg_substory(SubStoryReader):
+
+    def title(self, sub_story_id: int) -> str:
+        return db.apg_story_data[sub_story_id].sub_story_id
+
+    async def prepare(self):
+        await self.client.apg_story_top()
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_apg_story(sub_story_id)
+
+    async def sort_by_time(self, sub_story_ids: List[EventSubStory]) -> List[EventSubStory]:
+        return sorted(sub_story_ids, key=lambda s: db.parse_time(db.apg_story_data[s.sub_story_id].condition_time))
+
+@EventId(10140)
+class fpc_substory(SubStoryReader):
+    special = True
+
+    def title(self, sub_story_id: int) -> str:
+        return db.fpc_story_data[sub_story_id].title
+
+    async def read(self, sub_story_id: int):
+        await self.client.read_fpc_story(sub_story_id)
+
+    async def special_read(self, sub_storys: EventSubStory, _log: Callable):
+        all_ids = set(s.sub_story_id for s in sub_storys.sub_story_info_list)
+        unread_ids = set(s.sub_story_id for s in sub_storys.sub_story_info_list if s.status == eEventSubStoryStatus.UNREAD)
+        cnt = 0;
+        last_period = eFpcPeriod.DAY
+        for period in eFpcPeriod:
+            unread_in_period = flow(unread_ids).where(lambda id: db.fpc_story_data[id].period == period).to_list()
+            fpc_op = eFpcOperationType.DAY_NIGHT_CHANGE if last_period != period else eFpcOperationType.SKIP
+            last_period = period
+            for _ in range(80): # should not be more than 80 times
+                if len(unread_in_period) == 0:
+                    break
+                resp = await self.client.draw_fpc_story(period, fpc_op)
+                fpc_op = eFpcOperationType.SKIP
+                cnt += 1
+                if resp.hit_sub_story_id in all_ids:
+                    if resp.hit_sub_story_id in unread_in_period:
+                        await self.read(resp.hit_sub_story_id)
+                        _log(f'阅读了{self.title(resp.hit_sub_story_id)}')
+                        unread_in_period.remove(resp.hit_sub_story_id)
+                        next((s for s in sub_storys.sub_story_info_list if s.sub_story_id == resp.hit_sub_story_id)).status = eEventSubStoryStatus.READED
+            else:
+                _log(f'80次未能完成故事阅读，下次再试吧')
+        if cnt:
+            _log(f'观看了{cnt}次表演')
+
 
 @EventId(10137)
 @EventId(10136)
