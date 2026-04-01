@@ -9,6 +9,8 @@ bug反馈/意见/交流群: 885228564
 
 如果网络不好，可自行[下载压缩包](https://github.com/Lanly109/AutoPCR_Web/releases/latest)，然后`python3 _download_web.py /path/to/zip`安装。
 
+可再运行`python3 _download_data.py`下载数据库和图片资源。
+
 ## HTTP 服务器模式
 
 ```bash
@@ -38,6 +40,7 @@ python3 _httpserver_test.py
 - aiorequests 来自 [HoshinoBot](https://github.com/Ice-Cirno/HoshinoBot)
 - 图片绘制改自 [convert2img](https://github.com/SonderXiaoming/convert2img)
 - 前端html来自 [AutoPCR_Web](https://github.com/Lanly109/AutoPCR_Web)
+- 角色OCR来自 [arena](https://github.com/watermellye/arena)
 - ~~前端html来自 [autopcr_web](https://github.com/cca2878/autopcr_web)~~
 - ~~前端html来自 [AutoPCR_Archived](https://github.com/watermellye/AutoPCR_Archived)~~
 - ~~模型生成来自 [PcrotoGen](https://github.com/cc004/PcrotoGen)~~

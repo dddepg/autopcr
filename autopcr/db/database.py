@@ -1,9 +1,11 @@
-from typing import List, Dict, Set, Tuple, Union
+from typing import List, Dict, Set, Tuple, Union, Optional
 import typing
-from ..model.enums import eCampaignCategory
-from ..model.common import ExtraEquipInfo, UnitData, eInventoryType, RoomUserItem, InventoryInfo
+import asyncio
+from ..model.enums import eCampaignCategory, eParamType
+from ..model.common import ExtraEquipInfo, ExtraEquipSubStatus, UnitData, eInventoryType, RoomUserItem, InventoryInfo
 from ..model.custom import ItemType, eDifficulty
 import datetime
+import time
 from collections import Counter, defaultdict
 from .dbmgr import dbmgr
 from .methods import *
@@ -29,6 +31,7 @@ class lazy_property(Generic[T]):
         if instance is None:
             return self # type: ignore
 
+        instance._touch_cache_access()
         dbmgr = getattr(instance, "dbmgr", None)
         if dbmgr is None:
             raise ValueError("数据库未初始化完成，请稍等片刻")
@@ -65,9 +68,86 @@ class database():
     wind_ball: ItemType = (eInventoryType.Item, 25013)
     sun_ball: ItemType = (eInventoryType.Item, 25014)
     dark_ball: ItemType = (eInventoryType.Item, 25015)
+    ex_rainbow_enhance_pt: ItemType = (eInventoryType.Item, 26202)
+
+    def __init__(self):
+        self.dbmgr: Optional[dbmgr] = None
+        self._cache_active_tasks: int = 0
+        self._cache_last_access: float = time.monotonic()
+        self._cache_cleanup_task: Optional[asyncio.Task] = None
+        self._cache_cooldown_seconds: int = 90
 
     def update(self, dbmgr):
         self.dbmgr = dbmgr
+        self._touch_cache_access()
+
+    def _touch_cache_access(self):
+        self._cache_last_access = time.monotonic()
+
+    def cached_props(self) -> List[str]:
+        return [
+            key[len("__cached_"):] for key in self.__dict__
+            if key.startswith("__cached_") and not key.startswith("__cached_version_")
+        ]
+
+    def clear_cache(self, keep: Optional[Set[str]] = None) -> Tuple[int, int]:
+        keep = keep or set()
+        cached = self.cached_props()
+        before = len(cached)
+        for name in cached:
+            if name in keep:
+                continue
+            self.__dict__.pop(f"__cached_{name}", None)
+            self.__dict__.pop(f"__cached_version_{name}", None)
+        after = len(self.cached_props())
+        return before, after
+
+    async def enter_cache_scope(self):
+        self._cache_active_tasks += 1
+        self._touch_cache_access()
+        if self._cache_cleanup_task and not self._cache_cleanup_task.done():
+            self._cache_cleanup_task.cancel()
+        self._cache_cleanup_task = None
+
+    async def exit_cache_scope(self):
+        self._cache_active_tasks = max(0, self._cache_active_tasks - 1)
+        self._touch_cache_access()
+        if self._cache_active_tasks == 0:
+            self._schedule_idle_cleanup()
+
+    def _schedule_idle_cleanup(self):
+        if self._cache_cleanup_task and not self._cache_cleanup_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._cache_cleanup_task = loop.create_task(self._clear_cache_when_idle())
+
+    async def _clear_cache_when_idle(self):
+        try:
+            while True:
+                if self._cache_active_tasks > 0:
+                    return
+
+                idle_for = time.monotonic() - self._cache_last_access
+                wait = self._cache_cooldown_seconds - idle_for
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    continue
+
+                before, after = self.clear_cache()
+                if before > after:
+                    logger.info(
+                        f"db cache cleared after idle {idle_for:.1f}s, "
+                        f"cached props: {before} -> {after}"
+                    )
+                return
+        except asyncio.CancelledError:
+            return
+        finally:
+            if asyncio.current_task() is self._cache_cleanup_task:
+                self._cache_cleanup_task = None
 
     @lazy_property
     def redeem_unit(self) -> Dict[int, Dict[int, RedeemUnit]]:
@@ -394,6 +474,22 @@ class database():
             )
 
     @lazy_property
+    def seven_schedule(self) -> Dict[int, SevenSchedule]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenSchedule.query(db)
+                .to_dict(lambda x: x.event_id, lambda x: x)
+            )
+
+    @lazy_property
+    def seven_schedule_by_schedule_id(self) -> Dict[int, SevenSchedule]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenSchedule.query(db)
+                .to_dict(lambda x: x.schedule_id, lambda x: x)
+            )
+
+    @lazy_property
     def campaign_beginner_data(self) -> Dict[int, CampaignBeginnerDatum]:
         with self.dbmgr.session() as db:
             return (
@@ -663,6 +759,7 @@ class database():
             return (
                 QuestDatum.query(db)
                 .concat(HatsuneQuest.query(db))
+                .concat(SevenQuestDatum.query(db))
                 .concat(ShioriQuest.query(db))
                 .concat(TalentQuestDatum.query(db))
                 .concat(AbyssQuestDatum.query(db))
@@ -781,6 +878,9 @@ class database():
                 .concat(
                     EventStoryDatum.query(db)
                     .select(lambda x: (x.value, x.title))
+                ).concat(
+                    SevenEventSetting.query(db)
+                    .select(lambda x: (x.event_id, x.title))
                 ).to_dict(lambda x: x[0], lambda x: x[1])
             )
 
@@ -790,6 +890,42 @@ class database():
             return (
                 EventStoryDetail.query(db)
                 .to_list()
+            )
+
+    @lazy_property
+    def seven_event_story_data(self) -> Dict[int, List[SevenStoryDatum]]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenStoryDatum.query(db)
+                .where(lambda x: x.contents_type == 0 and x.story_type in (1, 2, 3))
+                .group_by(lambda x: x.event_id)
+                .to_dict(lambda x: x.key, lambda x: sorted(x.to_list(), key=lambda y: (y.story_index, y.story_id)))
+            )
+
+    @lazy_property
+    def seven_obtent_story_data(self) -> Dict[int, List[SevenStoryDatum]]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenStoryDatum.query(db)
+                .where(lambda x: x.contents_type == 4 and x.story_type == 5)
+                .group_by(lambda x: x.event_id)
+                .to_dict(lambda x: x.key, lambda x: sorted(x.to_list(), key=lambda y: y.story_id))
+            )
+
+    @lazy_property
+    def seven_contents_condition(self) -> Dict[Tuple[int, int], SevenContentsCondition]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenContentsCondition.query(db)
+                .to_dict(lambda x: (x.event_id, x.contents_type), lambda x: x)
+            )
+
+    @lazy_property
+    def seven_story_detail(self) -> Dict[int, SevenStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenStoryDatum.query(db)
+                .to_dict(lambda x: x.story_id, lambda x: x)
             )
 
     @lazy_property
@@ -931,6 +1067,7 @@ class database():
         ret[(eInventoryType.TeamExp, 92001)] = "经验"
         ret[(eInventoryType.Jewel, 91002)] = "宝石"
         ret[(eInventoryType.Gold, 94002)] = "mana"
+        ret[(eInventoryType.Gold, 94000)] = "mana"
         ret[(eInventoryType.SeasonPassPoint, 98002)] = "祝福经验值"
         ret[(eInventoryType.SeasonPassStamina, 93002)] = "星尘体力药剂"
         return ret
@@ -1247,20 +1384,56 @@ class database():
             )
 
     @lazy_property
-    def quest_to_event(self) -> Dict[int, HatsuneQuest]:
+    def quest_to_event(self) -> Dict[int, Union[HatsuneQuest, ShioriQuest, SevenQuestDatum]]:
         with self.dbmgr.session() as db:
             return (
                 HatsuneQuest.query(db)
+                .concat(SevenQuestDatum.query(db))
                 .concat(ShioriQuest.query(db))
                 .to_dict(lambda x: x.quest_id, lambda x: x) # 类型不一致，Hatsune和Shiori是否分开？
             )
-        
+
     @lazy_property
     def hatsune_item(self) -> Dict[int, HatsuneItem]:
         with self.dbmgr.session() as db:
             return (
                 HatsuneItem.query(db)
                 .to_dict(lambda x: x.event_id, lambda x: x)
+            )
+
+    @lazy_property
+    def seven_common_mission(self) -> Dict[Tuple[int, int], SevenCommonMissionDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenCommonMissionDatum.query(db)
+                .to_dict(lambda x: (x.mission_group_id, x.mission_id), lambda x: x)
+            )
+
+    @lazy_property
+    def seven_unique_mission(self) -> Dict[Tuple[int, int], SevenUniqueMissionDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                SevenUniqueMissionDatum.query(db)
+                .to_dict(lambda x: (x.event_id, x.mission_id), lambda x: x)
+            )
+
+    @lazy_property
+    def event_quest_data(self) -> Dict[int, List[Union[HatsuneQuest, SevenQuestDatum]]]:
+        with self.dbmgr.session() as db:
+            ret: Dict[int, List[Union[HatsuneQuest, SevenQuestDatum]]] = defaultdict(list)
+            quests = HatsuneQuest.query(db).concat(SevenQuestDatum.query(db)).to_list()
+            for quest in quests:
+                ret[quest.event_id].append(quest)
+            for event_id, quests in ret.items():
+                quests.sort(key=self.get_event_quest_order)
+            return dict(ret)
+
+    @lazy_property
+    def abd_story_data(self) -> Dict[int, AbdStoryDatum]:
+        with self.dbmgr.session() as db:
+            return (
+                AbdStoryDatum.query(db)
+                .to_dict(lambda x: x.sub_story_id, lambda x: x)
             )
 
     @lazy_property
@@ -1472,6 +1645,25 @@ class database():
             )
 
     @lazy_property
+    def ex_equipment_sub_status(self) -> Dict[int, Dict[int, ExEquipmentSubStatus]]:
+        with self.dbmgr.session() as db:
+            return (
+                ExEquipmentSubStatus.query(db)
+                .group_by(lambda x: x.group_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_dict(
+                    lambda x: x.status, lambda x: x
+                ))
+            )
+
+    @lazy_property
+    def ex_equipment_sub_status_group(self) -> Dict[int, ExEquipmentSubStatusGroup]:
+        with self.dbmgr.session() as db:
+            return (
+                ExEquipmentSubStatusGroup.query(db)
+                .to_dict(lambda x: x.ex_equipment_id, lambda x: x)
+            )
+
+    @lazy_property
     def ex_equipment_rankup_data(self) -> Dict[int, Dict[int, ExEquipmentRankupDatum]]:
         with self.dbmgr.session() as db:
             return (
@@ -1567,9 +1759,12 @@ class database():
             ret = (
                 QuestDatum.query(db)
                 .concat(HatsuneQuest.query(db))
+                .concat(SevenQuestDatum.query(db))
                 .concat(ShioriQuest.query(db))
                 .concat(TrainingQuestDatum.query(db))
                 .concat(TalentQuestDatum.query(db))
+                .concat(MirageNemesisQuestDisplay.query(db))
+                .concat(MirageFloorQuestDisplay.query(db))
                 .to_dict(lambda x: x.quest_id, lambda x: x.quest_name)
             )
         ret.update(
@@ -1593,7 +1788,8 @@ class database():
         1: '铜',
         2: '银',
         3: '金',
-        4: '粉'
+        4: '粉',
+        5: '彩'
     }
 
     @lazy_property
@@ -1686,6 +1882,61 @@ class database():
                 .to_dict(lambda x: x.talent_level, lambda x: x)
             )
 
+    @lazy_property
+    def mirage_setting(self) -> Dict[int, MirageSetting]:
+        with self.dbmgr.session() as db:
+            return (
+                MirageSetting.query(db)
+                .to_dict(lambda x: x.id, lambda x: x)
+            )
+
+    @lazy_property
+    def mirage_nemesis_quest(self) -> Dict[int, Dict[int, MirageNemesisQuest]]:
+        with self.dbmgr.session() as db:
+            return (
+                MirageNemesisQuest.query(db)
+                .group_by(lambda x: x.nemesis_id)
+                .to_dict(lambda x: x.key, lambda x: x.to_dict(
+                    lambda x: x.area_level, lambda x: x
+                ))
+            )
+
+    @lazy_property
+    def mirage_floor_setting(self) -> Dict[int, MirageFloorSetting]:
+        with self.dbmgr.session() as db:
+            return (
+                MirageFloorSetting.query(db)
+                .to_dict(lambda x: x.floor_num, lambda x: x)
+            )
+
+    @lazy_property
+    def mirage_nemesis_area(self) -> Dict[int, MirageNemesisArea]:
+        with self.dbmgr.session() as db:
+            return (
+                MirageNemesisArea.query(db)
+                .to_dict(lambda x: x.nemesis_id, lambda x: x)
+            )
+
+    @lazy_property
+    def alces_story(self) -> Dict[int, AlcesStory]:
+        with self.dbmgr.session() as db:
+            return (
+                AlcesStory.query(db)
+                .to_dict(lambda x: x.story_id, lambda x: x)
+            )
+
+    @lazy_property
+    def alces_cost(self) -> Dict[ItemType, AlcesCost]:
+        with self.dbmgr.session() as db:
+            return (
+                AlcesCost.query(db)
+                .to_dict(lambda x: (x.type, x.item_id), lambda x: x)
+            )
+
+    def get_mirage_setting(self) -> MirageSetting:
+        max_id = max(self.mirage_setting.keys(), default=1)
+        return self.mirage_setting[max_id]
+
     def get_ex_equip_star_from_pt(self, id: int, pt: int) -> int:
         rarity = self.get_ex_equip_rarity(id)
         star = max([star for star, enhancement_data in self.ex_equipment_enhance_data[rarity].items() if enhancement_data.total_point <= pt], default=0)
@@ -1716,6 +1967,31 @@ class database():
 
     def get_ex_equip_rarity_name(self, id: int) -> str:
         return self.ex_rarity_name[self.get_ex_equip_rarity(id)]
+
+    def get_ex_equip_sub_status(self, ex_equip_id: int, sub_status: List[ExtraEquipSubStatus]) -> Dict[int, int]:
+        data = Counter()
+        group = self.ex_equipment_sub_status_group[ex_equip_id]
+        sub_status_data = self.ex_equipment_sub_status[group.group_id]
+        for status in sub_status or []:
+            data[status.status] += sub_status_data[status.status].step_value(status.step)
+        return data
+
+    def get_ex_equip_sub_status_str(self, ex_equip_id: int, sub_status: List[ExtraEquipSubStatus]) -> str:
+        data = self.get_ex_equip_sub_status(ex_equip_id, sub_status)
+        msg = []
+        for param, count in sorted(data.items()):
+            en_name = UnitAttribute.index2name.get(eParamType(param), f"unknown_param_{param}")
+            name = UnitAttribute.index2ch.get(eParamType(param), f"未知属性{param}")
+            is_present = UnitAttribute.is_present.get(en_name, False)
+            if is_present:
+                count /= 100
+                msg.append(f"{name}x{count:.2f}%")
+            else:
+                msg.append(f"{name}x{count}")
+
+        if not msg:
+            return '空'
+        return '/'.join(msg)
 
     def get_ex_equip_rankup_cost(self, id: int, start_rank: int, end_rank: int) -> int:
         rarity = self.get_ex_equip_rarity(id)
@@ -1779,6 +2055,63 @@ class database():
                 return self.quest_name[quest_id]
         except:
             return f"未知关卡({quest_id})"
+
+    def is_seven_event(self, event_id: int) -> bool:
+        return event_id in self.seven_schedule
+
+    def get_event_quest_order(self, quest: Union[HatsuneQuest, SevenQuestDatum]) -> int:
+        if isinstance(quest, HatsuneQuest):
+            return quest.quest_seq
+        return quest.quest_index
+
+    def is_event_quest_available(self, quest: Union[HatsuneQuest, SevenQuestDatum]) -> bool:
+        if isinstance(quest, HatsuneQuest):
+            return True
+        if quest.condition_time == '0':
+            return True
+        return apiclient.datetime >= self.parse_time(quest.condition_time)
+
+    def get_event_quests(self, event_id: int) -> List[Union[HatsuneQuest, SevenQuestDatum]]:
+        return [quest for quest in self.event_quest_data.get(event_id, []) if self.is_event_quest_available(quest)]
+
+    def get_event_normal_quests(self, event_id: int) -> List[int]:
+        return [quest.quest_id for quest in self.get_event_quests(event_id) if quest.daily_limit == 0]
+
+    def get_event_hard_quests(self, event_id: int) -> List[int]:
+        return [quest.quest_id for quest in self.get_event_quests(event_id) if quest.daily_limit > 0]
+
+    def get_event_normal_quest(self, event_id: int, index: int) -> Optional[int]:
+        quests = self.get_event_normal_quests(event_id)
+        return quests[index - 1] if 1 <= index <= len(quests) else None
+
+    def get_event_hard_quest(self, event_id: int, index: int) -> Optional[int]:
+        quests = self.get_event_hard_quests(event_id)
+        return quests[index - 1] if 1 <= index <= len(quests) else None
+
+    def get_event_gacha_id(self, event_id: int) -> int:
+        if self.is_seven_event(event_id):
+            return self.seven_schedule[event_id].gacha_id
+        return event_id
+
+    def get_event_gacha_ticket_id(self, event_id: int) -> int:
+        if self.is_seven_event(event_id):
+            return self.seven_schedule[event_id].gacha_ticket_id
+        return self.hatsune_item[event_id].gacha_ticket_id
+
+    def get_event_schedule_id(self, event_id: int) -> int:
+        return self.seven_schedule[event_id].schedule_id
+
+    def get_seven_mission_type(self, event_id: int, mission) -> int:
+        schedule = self.seven_schedule[event_id]
+        common = self.seven_common_mission.get((schedule.mission_group_id, mission.mission_id))
+        if common:
+            return common.mission_type
+
+        unique = self.seven_unique_mission.get((event_id, mission.mission_id))
+        if unique:
+            return unique.mission_type
+
+        raise KeyError(f"无法确定seven活动任务类型: {event_id}:{mission.mission_id}")
 
     def is_daily_mission(self, mission_id: int) -> bool:
         return mission_id in self.daily_mission_data or mission_id in self.season_pack
@@ -1849,6 +2182,9 @@ class database():
     def is_hatsune_quest(self, quest_id: int) -> bool:
         return quest_id // 1000000 == 10
 
+    def is_event_quest(self, quest_id: int) -> bool:
+        return self.is_hatsune_quest(quest_id) and quest_id in self.quest_to_event
+
     def is_talent_quest(self, quest_id: int) -> bool:
         top = quest_id // 1000000
         return top >= 81 and top <= 85
@@ -1857,10 +2193,16 @@ class database():
         return quest_id // 1000000 == 92
 
     def is_hatsune_normal_quest(self, quest_id: int) -> bool:
-        return self.is_hatsune_quest(quest_id) and (quest_id // 100) % 10 == 1
+        return self.is_event_normal_quest(quest_id)
 
     def is_hatsune_hard_quest(self, quest_id: int) -> bool:
-        return self.is_hatsune_quest(quest_id) and (quest_id // 100) % 10 == 2
+        return self.is_event_hard_quest(quest_id)
+
+    def is_event_normal_quest(self, quest_id: int) -> bool:
+        return self.is_event_quest(quest_id) and self.quest_info[quest_id].daily_limit == 0
+
+    def is_event_hard_quest(self, quest_id: int) -> bool:
+        return self.is_event_quest(quest_id) and self.quest_info[quest_id].daily_limit > 0
 
     def is_shiori_quest(self, quest_id: int) -> bool:
         return quest_id // 1000000 == 20
@@ -1929,19 +2271,31 @@ class database():
                 .where(lambda x: now >= self.parse_time(x.start_time) and now <= self.parse_time(x.end_time)) \
                 .to_list()
 
+    def get_active_seven(self) -> List[SevenSchedule]:
+        now = apiclient.datetime
+        return flow(self.seven_schedule.values()) \
+                .where(lambda x: now >= self.parse_time(x.start_time) and now <= self.parse_time(x.end_time)) \
+                .to_list()
+
+    def get_active_event(self) -> List[Union[HatsuneSchedule, SevenSchedule]]:
+        return self.get_active_hatsune() + self.get_active_seven()
+
     def get_active_hatsune_id(self) -> List[int]:
-        active_hatsune = self.get_active_hatsune()
+        active_hatsune = self.get_active_event()
         return [event.event_id for event in active_hatsune]
 
     def get_active_hatsune_name(self) -> List[str]:
-        active_hatsune = self.get_active_hatsune()
-        return [f"{event.event_id}:{db.event_name[event.event_id]}" for event in active_hatsune]
+        active_hatsune = self.get_active_event()
+        return [f"{event.event_id}:{db.event_name.get(event.event_id, event.event_id)}" for event in active_hatsune]
 
     def get_open_hatsune(self) -> List[HatsuneSchedule]:
         now = apiclient.datetime
         return flow(self.hatsune_schedule.values()) \
                 .where(lambda x: now >= self.parse_time(x.start_time) and now <= self.parse_time(x.close_time)) \
                 .to_list()
+
+    def get_open_event(self) -> List[Union[HatsuneSchedule, SevenSchedule]]:
+        return self.get_open_hatsune() + self.get_active_seven()
 
     def get_active_abyss(self) -> List[AbyssSchedule]:
         now = apiclient.datetime
@@ -2377,7 +2731,7 @@ class database():
     def is_unit_rank_bonus(self, unit_id: int, promotion_level: int) -> bool:
         return unit_id in self.promote_bonus and promotion_level in self.promote_bonus[unit_id]
 
-    def calc_unit_attribute(self, unit_data: UnitData, read_story: Set[int], ex_equips: Dict[int, ExtraEquipInfo]) -> UnitAttribute:
+    def calc_unit_attribute(self, unit_data: UnitData, read_story: Set[int], ex_equips: Dict[int, ExtraEquipInfo], exclude_ex_equip: bool = False) -> UnitAttribute:
         unit_id = unit_data.id
         promotion_level = unit_data.promotion_level.value
         rarity = unit_data.battle_rarity if unit_data.battle_rarity else unit_data.unit_rarity
@@ -2420,15 +2774,24 @@ class database():
         unit_attribute = base_attribute.round() + rb_attribute.round() + equip_attribute.round() + unique_equip_attribute.ceil() + kizuna_attribute.round()
 
         # EX装备
-        ex_attribute = UnitAttribute()
-        for ex_equip in unit_data.ex_equip_slot:
-            if ex_equip.serial_id:
-                ex_equip_data = ex_equips[ex_equip.serial_id]
-                star = self.get_ex_equip_star_from_pt(ex_equip_data.ex_equipment_id, ex_equip_data.enhancement_pt)
-                attr = self.ex_equipment_data[ex_equip_data.ex_equipment_id].get_unit_attribute(star)
-                bonus = unit_attribute.ex_equipment_mul(attr).ceil()
-                ex_attribute += bonus
-        unit_attribute += ex_attribute
+        if not exclude_ex_equip:
+            ex_attribute = UnitAttribute()
+            for ex_equip in unit_data.ex_equip_slot:
+                if ex_equip.serial_id:
+                    ex_equip_data = ex_equips[ex_equip.serial_id]
+                    star = self.get_ex_equip_star_from_pt(ex_equip_data.ex_equipment_id, ex_equip_data.enhancement_pt)
+                    attr = self.ex_equipment_data[ex_equip_data.ex_equipment_id].get_unit_attribute(star)
+                    if ex_equip_data.sub_status:
+                        group = self.ex_equipment_sub_status_group[ex_equip_data.ex_equipment_id]
+                        sub_status_data = db.ex_equipment_sub_status[group.group_id]
+                        for status in ex_equip_data.sub_status:
+                            value = sub_status_data[status.status].step_value(status.step)
+                            a = UnitAttribute()
+                            a.set_value(status.status, value)
+                            attr += a
+                    bonus = unit_attribute.ex_equipment_mul(attr).ceil()
+                    ex_attribute += bonus
+            unit_attribute += ex_attribute
 
         return unit_attribute
 
@@ -2491,5 +2854,9 @@ class database():
         free_gacha_campaign = min(free_gacha_campaigns)
         return [gacha.gacha_id for gacha in self.campaign_free_gacha_data[free_gacha_campaign]]
 
+    def ex_equip_sub_status_candidate(self) -> List[int]:
+        ids = list(set(j.status for i in self.ex_equipment_sub_status.values() for j in i.values()))
+        ids.append(0)
+        return sorted(ids)
 
 db = database()
