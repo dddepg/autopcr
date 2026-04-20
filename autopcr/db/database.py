@@ -2365,12 +2365,15 @@ class database():
                 .select(lambda x: (db.parse_time(x.start_time), db.parse_time(x.end_time)))
                 .to_list()
              )
+        is_afternoon = now >= self.get_start_time(now) + half_day
         campaign_list = {
             "n3以上前夕": lambda: not self.is_target_time(n3, now) and self.is_target_time(n3, tomorrow),
             "n3以上首日午前": lambda: self.is_target_time(n3, now) and not self.is_target_time(n3, now - half_day),
             "h3以上前夕": lambda: not self.is_target_time(h3, now) and self.is_target_time(h3, tomorrow),
             "会战前夕": lambda: not self.is_clan_battle_time(now) and self.is_clan_battle_time(tomorrow),
+            "会战前夕午后": lambda: not self.is_clan_battle_time(now) and self.is_clan_battle_time(tomorrow) and is_afternoon,
             "会战期间": lambda: self.is_clan_battle_time(now),
+            "会战期间午后": lambda: self.is_clan_battle_time(now) and is_afternoon,
             "总是执行": lambda: True,
         }
         if campaign not in campaign_list:

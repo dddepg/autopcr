@@ -33,9 +33,10 @@ import secrets
 from .autopcr.util.pcr_data import get_id_from_name
 import traceback
 from .autopcr.util.logger import instance as logger
+from .autopcr.constants import PUBLIC_ADDRESS as ENV_PUBLIC_ADDRESS, USE_HTTPS
 
-address = None  # 填你的公网IP或域名，不填则会自动尝试获取
-useHttps = False
+address = ENV_PUBLIC_ADDRESS or None  # 环境变量AUTOPCR_PUBLIC_ADDRESS，不填则会自动尝试获取
+useHttps = bool(USE_HTTPS)
 
 server = HttpServer(qq_mod=True)
 app = nonebot.get_bot().server_app
