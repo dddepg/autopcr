@@ -71,10 +71,12 @@ class ex_equip_wear(Module):
     def decorate(client: pcrclient, ex, unit_attr: UnitAttribute, coefficient) -> Dict:
         ex_id = ex.ex_equipment_id
         star = db.get_ex_equip_star_from_pt(ex_id, ex.enhancement_pt)
-        attr = db.ex_equipment_data[ex_id].get_unit_attribute(star, ex.sub_status)
+        # 会战EX装与部分装备没有炼成属性表，查询时按无炼成处理
+        sub = ex.sub_status if (ex.sub_status and ex_id in db.ex_equipment_sub_status_group) else None
+        attr = db.ex_equipment_data[ex_id].get_unit_attribute(star, sub)
         bonus = unit_attr.ex_equipment_mul(attr).ceil()
         power = int(bonus.get_power(coefficient) + 0.5)
-        sub_str = db.get_ex_equip_sub_status_str(ex_id, ex.sub_status)
+        sub_str = db.get_ex_equip_sub_status_str(ex_id, sub) if sub else '空'
         label = db.get_ex_equip_name(ex_id)
         return {
             'serial_id': ex.serial_id,
@@ -120,7 +122,8 @@ class ex_equip_wear(Module):
         for cat in categories:
             cands = [self.decorate(client, ex, unit_attr, coefficient)
                      for ex in client.data.ex_equips.values()
-                     if db.ex_equipment_data[ex.ex_equipment_id].category == cat]
+                     if not db.ex_equipment_data[ex.ex_equipment_id].clan_battle_equip_flag
+                     and db.ex_equipment_data[ex.ex_equipment_id].category == cat]
             cands.sort(key=lambda d: (0 if d['rarity'] == 5 else 1, -d['power']))
             per_slot.append(cands)
 
