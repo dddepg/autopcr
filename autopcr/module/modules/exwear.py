@@ -127,9 +127,10 @@ class ex_equip_wear(Module):
                      for ex in client.data.ex_equips.values()
                      if not db.ex_equipment_data[ex.ex_equipment_id].clan_battle_equip_flag
                      and db.ex_equipment_data[ex.ex_equipment_id].category == cat
-                     and db.get_ex_equip_rarity(ex.ex_equipment_id) != 3]
-            # 彩装只保留满星(★5)：未穿戴优先，再按战力降序，最多展示5个
-            rainbows = [d for d in cands if d['rarity'] == 5 and d['star'] >= 5]
+                     and db.get_ex_equip_rarity(ex.ex_equipment_id) != 3
+                     and not (position.get(ex.serial_id) and position[ex.serial_id][0] == unit_id)]
+            # 彩装：未穿戴优先，最多展示5个；其余稀有度按战力降序排在彩装之后
+            rainbows = [d for d in cands if d['rarity'] == 5]
             others = [d for d in cands if d['rarity'] != 5]
             rainbows.sort(key=lambda d: (1 if d['worn_by'] else 0, -d['power']))
             others.sort(key=lambda d: -d['power'])
@@ -210,7 +211,7 @@ class ex_equip_wear(Module):
                 lines.append(f"槽位{slot_no}: 未装备")
         lines.append("")
         for slot_no, (cands, capped) in enumerate(zip(per_slot, capped_flags), start=1):
-            note = "，5星彩装仅显示前%d个未穿戴优先" % self.RAINBOW_SHOW_LIMIT if capped else ""
+            note = "，彩装仅显示前%d个(未穿戴优先)" % self.RAINBOW_SHOW_LIMIT if capped else ""
             lines.append(f"【槽位{slot_no}】(共{len(cands)}可选，金装已过滤{note}):")
             for i, d in enumerate(cands, start=1):
                 marks = []
