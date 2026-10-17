@@ -50,7 +50,7 @@ SUPPORT_TYPE_API = {
 SUPPORT_POSITIONS = {
     '地下城': [eClanSupportMemberType.DUNGEON_SUPPORT_UNIT_1, eClanSupportMemberType.DUNGEON_SUPPORT_UNIT_2],
     '会战': [eClanSupportMemberType.CLAN_BATTLE_SUPPORT_UNIT_1, eClanSupportMemberType.CLAN_BATTLE_SUPPORT_UNIT_2],
-    '好友': [1],
+    '好友': [1, 2],
 }
 
 
@@ -264,11 +264,12 @@ class set_support_unit(Module):
             raise AbortError(f"{type_name}支援最多可设置{len(positions)}个角色")
 
         api_type = SUPPORT_TYPE_API[type_name]
+        slot_nums = {pos: i + 1 for i, pos in enumerate(SUPPORT_POSITIONS[type_name])}
         logs = []
         for (unit_id, star), pos in zip(units, positions):
             old = current.get(pos)
             if old and old.unit_id == unit_id:
-                logs.append(f"{db.get_unit_name(unit_id)} 已是{type_name}支援{pos}号位，跳过")
+                logs.append(f"{db.get_unit_name(unit_id)} 已是{type_name}支援{slot_nums[pos]}号位，跳过")
                 continue
             if old:
                 await client.support_unit_change_setting(api_type, pos, 2, old.unit_id)
@@ -280,5 +281,5 @@ class set_support_unit(Module):
             finally:
                 if star and star != origin_rarity:
                     await client.unit_change_rarity([ChangeRarityUnit(unit_id=unit_id, battle_rarity=origin_rarity)])
-            logs.append(f"已将{db.get_unit_name(unit_id)}设为{type_name}支援{pos}号位" + (f"(星级{star})" if star else ""))
+            logs.append(f"已将{db.get_unit_name(unit_id)}设为{type_name}支援{slot_nums[pos]}号位" + (f"(星级{star})" if star else ""))
         self._log('\n'.join(logs))
