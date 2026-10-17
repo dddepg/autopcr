@@ -172,19 +172,11 @@ class ex_equip_wear(Module):
             if cur_wear.get(slot_no) == sid:
                 continue
             holder = position.get(sid)
-            my_cur_sid = cur_wear.get(slot_no, 0)
-            if holder:
+            if holder and holder != (unit_id, slot_no):
                 w_uid, w_slot = holder
                 w_name = "自己" if w_uid == unit_id else db.get_unit_name(w_uid)
-                if my_cur_sid:
-                    # 服务端要求装备先脱下才能穿到别人身上：先取下双方的，再各自穿上
-                    actions.append((unit_id, slot_no, 0))
-                    actions.append((w_uid, w_slot, 0))
-                    actions.append((w_uid, w_slot, my_cur_sid))
-                    result_lines.append(f"与{w_name}槽{w_slot}互换装备")
-                else:
-                    actions.append((w_uid, w_slot, 0))
-                    result_lines.append(f"从{w_name}的槽{w_slot}取下{d['label']}")
+                actions.append((w_uid, w_slot, 0))
+                result_lines.append(f"从{w_name}的槽{w_slot}取下{d['label']}")
             actions.append((unit_id, slot_no, sid))
 
         if not actions:
