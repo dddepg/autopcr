@@ -66,7 +66,7 @@ class ex_equip_wear(Module):
     '''
 
     SLOT_CNT = 3
-    RAINBOW_SHOW_LIMIT = 5
+    PINK_SHOW_LIMIT = 5
 
     @staticmethod
     def decorate(client: pcrclient, ex, unit_attr: UnitAttribute, coefficient, worn_by: Optional[Tuple[int, int]] = None) -> Dict:
@@ -129,13 +129,15 @@ class ex_equip_wear(Module):
                      and db.ex_equipment_data[ex.ex_equipment_id].category == cat
                      and db.get_ex_equip_rarity(ex.ex_equipment_id) != 3
                      and not (position.get(ex.serial_id) and position[ex.serial_id][0] == unit_id)]
-            # 彩装：未穿戴优先，最多展示5个；其余稀有度按战力降序排在彩装之后
+            # 彩装全部显示(未穿戴优先)，粉装仅显示前5个5星(未穿戴优先)，其余稀有度按战力降序垫后
             rainbows = [d for d in cands if d['rarity'] == 5]
-            others = [d for d in cands if d['rarity'] != 5]
+            pinks = [d for d in cands if d['rarity'] == 4 and d['star'] >= 5]
+            others = [d for d in cands if d['rarity'] not in (4, 5)]
             rainbows.sort(key=lambda d: (1 if d['worn_by'] else 0, -d['power']))
+            pinks.sort(key=lambda d: (1 if d['worn_by'] else 0, -d['power']))
             others.sort(key=lambda d: -d['power'])
-            capped_flags.append(len(rainbows) > self.RAINBOW_SHOW_LIMIT)
-            per_slot.append(rainbows[:self.RAINBOW_SHOW_LIMIT] + others)
+            capped_flags.append(len(pinks) > self.PINK_SHOW_LIMIT)
+            per_slot.append(rainbows + pinks[:self.PINK_SHOW_LIMIT] + others)
 
         if not selection:
             self._log(self.build_query_log(client, unit_id, cur_wear, per_slot, capped_flags, unit_attr, coefficient, position))
@@ -211,7 +213,7 @@ class ex_equip_wear(Module):
                 lines.append(f"槽位{slot_no}: 未装备")
         lines.append("")
         for slot_no, (cands, capped) in enumerate(zip(per_slot, capped_flags), start=1):
-            note = "，彩装仅显示前%d个(未穿戴优先)" % self.RAINBOW_SHOW_LIMIT if capped else ""
+            note = "，粉装仅显示前%d个5星(未穿戴优先)" % self.PINK_SHOW_LIMIT if capped else ""
             lines.append(f"【槽位{slot_no}】(共{len(cands)}可选，金装已过滤{note}):")
             for i, d in enumerate(cands, start=1):
                 marks = []
