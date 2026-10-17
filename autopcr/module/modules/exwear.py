@@ -140,10 +140,13 @@ class ex_equip_wear(Module):
             self._log(self.build_query_log(client, unit_id, cur_wear, per_slot, filtered_flags, unit_attr, coefficient))
             return
 
-        dry_run = selection == '试穿'
-        tokens = [] if dry_run else selection.split()
+        dry_run = False
+        tokens = selection.split()
+        if tokens and tokens[0] == '试穿':
+            dry_run = True
+            tokens = tokens[1:]
         if len(tokens) != self.SLOT_CNT:
-            raise AbortError(f"选择格式应为{self.SLOT_CNT}个编号(不足的槽位用0表示保持不变)，如: 1 1 15")
+            raise AbortError(f"选择格式应为{self.SLOT_CNT}个编号(不足的槽位用0表示保持不变)，试穿需带编号，如: 试穿 1 1 15")
 
         picked: List[Optional[Dict]] = []
         for slot_no, token in zip(range(1, self.SLOT_CNT + 1), tokens):
@@ -218,7 +221,7 @@ class ex_equip_wear(Module):
                 mark = f" [{','.join(marks)}]" if marks else ""
                 lines.append(f"{i}. {d['label']} 战力+{d['power']}{mark}")
             lines.append("")
-        lines.append(f"回复 #一键穿ex {unit_name} 试穿 可预览效果")
+        lines.append(f"回复 #一键穿ex {unit_name} 试穿 1 1 15 可预览效果(不实际穿戴)")
         lines.append(f"回复 #一键穿ex {unit_name} 1 1 15 按各槽位编号穿戴(0为保持不变)")
         return '\n'.join(lines)
 

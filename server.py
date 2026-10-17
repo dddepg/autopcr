@@ -1197,7 +1197,7 @@ async def ocr_team(botev: BotEvent):
     )
     await botev.finish(msg)
 
-@sv.on_prefix(f"{prefix}一键穿ex")
+@sv.on_prefix(f"{prefix}一键穿ex", f"{prefix}—键穿ex", f"{prefix}–键穿ex", f"{prefix}-键穿ex")
 @wrap_hoshino_event
 @wrap_accountmgr
 @wrap_account
