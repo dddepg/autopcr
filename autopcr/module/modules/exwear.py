@@ -159,10 +159,7 @@ class ex_equip_wear(Module):
                 continue
             if not 1 <= n <= len(per_slot[slot_no - 1]):
                 raise AbortError(f"槽位{slot_no}编号超出范围 1~{len(per_slot[slot_no - 1])}")
-            d = per_slot[slot_no - 1][n - 1]
-            if d['protected'] and cur_wear.get(slot_no) != d['serial_id']:
-                raise AbortError(f"槽位{slot_no}的目标装备 {d['label']} 已锁定，请先在游戏中解锁")
-            picked.append(d)
+            picked.append(per_slot[slot_no - 1][n - 1])
 
         result_lines = [self.describe_slot(client, unit_id, slot_no, per_slot[slot_no - 1], d)
                         for slot_no, d in zip(range(1, self.SLOT_CNT + 1), picked)]
