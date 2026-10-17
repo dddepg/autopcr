@@ -59,6 +59,10 @@ sv_help = f"""
 - {prefix}查角色 [昵称] 查看角色练度
 - {prefix}查缺角色 查看缺少的限定常驻角色
 - {prefix}查ex装备 [会战] 查看ex装备库存
+- {prefix}一键穿ex <角色> [试穿|槽1编号 槽2编号 槽3编号] 查询/穿戴角色普通EX装备，先查询获取编号
+- {prefix}保存ex状态 保存当前所有角色的普通EX装备穿戴状态
+- {prefix}恢复ex状态 恢复之前保存的普通EX装备穿戴状态
+- {prefix}挂地下城支援|挂会战支援|挂好友支援 [星级]角色1 [[星级]角色2] 设置支援出借角色，星级可选(3/4/5)，如: {prefix}挂好友支援3水电
 - {prefix}查探险编队 根据记忆碎片角色编队战力相当的队伍
 - {prefix}查兑换角色碎片 [开换] 查询兑换特别角色的记忆碎片策略
 - {prefix}查心碎 查询缺口心碎
@@ -975,6 +979,62 @@ async def ex_equip_info(botev: BotEvent):
     }
     return config
 
+@register_tool("保存ex状态", "ex_equip_state")
+async def save_ex_state(botev: BotEvent):
+    return {
+        "ex_equip_state_action": "保存",
+    }
+
+@register_tool("恢复ex状态", "ex_equip_state")
+async def restore_ex_state(botev: BotEvent):
+    return {
+        "ex_equip_state_action": "恢复",
+    }
+
+async def parse_support_unit_tokens(botev: BotEvent) -> str:
+    msg = await botev.message()
+    if not msg:
+        await botev.finish(f"请指定角色，星级可放角色名前(3/4/5)，如: {prefix}挂好友支援3水电 妹弓")
+    units = []
+    unknown = []
+    for token in msg:
+        star = 0
+        name = token
+        m = re.match(r'^([345])\s*(.+)$', token)
+        if m:
+            star = int(m.group(1))
+            name = m.group(2)
+        unit_id = get_id_from_name(name)
+        if not unit_id:
+            unknown.append(token)
+            continue
+        units.append(f"{unit_id * 100 + 1}:{star}")
+    if unknown:
+        await botev.finish(f"未知角色{'、'.join(unknown)}")
+    del msg[:]
+    return ','.join(units)
+
+@register_tool("挂地下城支援", "set_support_unit")
+async def set_dungeon_support(botev: BotEvent):
+    return {
+        "support_unit_set_type": "地下城",
+        "support_unit_set_units": await parse_support_unit_tokens(botev),
+    }
+
+@register_tool("挂会战支援", "set_support_unit")
+async def set_clan_support(botev: BotEvent):
+    return {
+        "support_unit_set_type": "会战",
+        "support_unit_set_units": await parse_support_unit_tokens(botev),
+    }
+
+@register_tool("挂好友支援", "set_support_unit")
+async def set_friend_support(botev: BotEvent):
+    return {
+        "support_unit_set_type": "好友",
+        "support_unit_set_units": await parse_support_unit_tokens(botev),
+    }
+
 @register_tool("查兑换角色碎片", "redeem_unit_swap")
 async def redeem_unit_swap(botev: BotEvent):
     really_do = False
@@ -1135,3 +1195,46 @@ async def ocr_team(botev: BotEvent):
             for id, team in enumerate(result)
     )
     await botev.finish(msg)
+
+@sv.on_prefix(f"{prefix}一键穿ex")
+@wrap_hoshino_event
+@wrap_accountmgr
+@wrap_account
+async def ex_equip_wear_cmd(botev: BotEvent, acc: Account):
+    msg = await botev.message()
+    if not msg:
+        await botev.finish(f"用法: {prefix}一键穿ex <角色名> [试穿|槽1编号 槽2编号 槽3编号]")
+    unit_name = msg[0]
+    del msg[0]
+    unit_id = get_id_from_name(unit_name)
+    if not unit_id:
+        await botev.finish(f"未知角色{unit_name}")
+    selection = ' '.join(msg)
+    del msg[:]
+    config = {
+        "ex_wear_unit_id": unit_id * 100 + 1,
+        "ex_wear_selection": selection,
+    }
+    alias = escape(acc.alias)
+    try:
+        is_admin_call = await botev.is_admin()
+        await botev.send("请稍等，正在查询EX装备..." if not selection else f"开始为{alias}穿戴EX装备，请稍等")
+        loop = asyncio.get_event_loop()
+        loop.create_task(check_validate(botev, acc.qq))
+        resp = await acc.do_from_key(config, 'ex_equip_wear', is_admin_call)
+        if isinstance(resp, List):
+            if not resp:
+                await botev.send("未选择账号！请到网页端批量运行选择账号后运行")
+                return
+            resp = resp[0]
+        result = resp.get_result()
+        if selection:
+            img = await drawer.draw_task_result(result)
+        else:
+            img = await drawer.draw_msgs(result.log.split('\n'))
+        msg_ = f"{alias}" + outp_b64(img)
+    except Exception as e:
+        logger.exception(e)
+        await botev.send(f'{alias}: {e}')
+        return
+    await botev.finish(msg_)

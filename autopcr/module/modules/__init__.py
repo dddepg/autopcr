@@ -9,6 +9,7 @@ from .clan import *
 from .cron import *
 from .daily import *
 from .exequip import *
+from .exwear import *
 from .gacha import *
 from .hatsune import *
 from .labyrinth import *
@@ -226,5 +227,7 @@ tool_modules = ModuleList(
         remove_cb_ex_equip,
         remove_cb_support,
         redeem_unit_swap,
+        ex_equip_wear,
+        set_support_unit,
     ]
 )
