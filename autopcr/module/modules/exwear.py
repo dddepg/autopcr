@@ -66,6 +66,7 @@ class ex_equip_wear(Module):
     '''
 
     SLOT_CNT = 3
+    QUERY_ROW_LIMIT = 20
 
     @staticmethod
     def decorate(client: pcrclient, ex, unit_attr: UnitAttribute, coefficient) -> Dict:
@@ -119,16 +120,24 @@ class ex_equip_wear(Module):
         unit_attr = db.calc_unit_attribute(unit, read_story, client.data.ex_equips, exclude_ex_equip=True)
 
         per_slot: List[List[Dict]] = []
+        filtered_flags: List[bool] = []
         for cat in categories:
             cands = [self.decorate(client, ex, unit_attr, coefficient)
                      for ex in client.data.ex_equips.values()
                      if not db.ex_equipment_data[ex.ex_equipment_id].clan_battle_equip_flag
                      and db.ex_equipment_data[ex.ex_equipment_id].category == cat]
             cands.sort(key=lambda d: (0 if d['rarity'] == 5 else 1, -d['power']))
+            filtered = False
+            if len(cands) > self.QUERY_ROW_LIMIT:
+                non_gold = [d for d in cands if d['rarity'] != 3]
+                if len(non_gold) < len(cands):
+                    cands = non_gold
+                    filtered = True
             per_slot.append(cands)
+            filtered_flags.append(filtered)
 
         if not selection:
-            self._log(self.build_query_log(client, unit_id, cur_wear, per_slot, unit_attr, coefficient))
+            self._log(self.build_query_log(client, unit_id, cur_wear, per_slot, filtered_flags, unit_attr, coefficient))
             return
 
         dry_run = selection == '试穿'
@@ -186,7 +195,7 @@ class ex_equip_wear(Module):
                             else f"已为{db.get_unit_name(unit_id)}装备完成！")
         self._log('\n'.join(result_lines))
 
-    def build_query_log(self, client: pcrclient, unit_id: int, cur_wear: Dict[int, int], per_slot: List[List[Dict]], unit_attr: UnitAttribute, coefficient) -> str:
+    def build_query_log(self, client: pcrclient, unit_id: int, cur_wear: Dict[int, int], per_slot: List[List[Dict]], filtered_flags: List[bool], unit_attr: UnitAttribute, coefficient) -> str:
         unit_name = db.get_unit_name(unit_id)
         lines = [f"----{unit_name} EX装备攻略----", "", "【当前装备】"]
         for slot_no in range(1, self.SLOT_CNT + 1):
@@ -197,8 +206,9 @@ class ex_equip_wear(Module):
             else:
                 lines.append(f"槽位{slot_no}: 未装备")
         lines.append("")
-        for slot_no, cands in enumerate(per_slot, start=1):
-            lines.append(f"【槽位{slot_no}】(共{len(cands)}可选):")
+        for slot_no, (cands, filtered) in enumerate(zip(per_slot, filtered_flags), start=1):
+            note = "，金装较多已省略" if filtered else ""
+            lines.append(f"【槽位{slot_no}】(共{len(cands)}可选{note}):")
             for i, d in enumerate(cands, start=1):
                 marks = []
                 if cur_wear.get(slot_no) == d['serial_id']:

@@ -6,7 +6,7 @@ import re
 from .autopcr.util import aiorequests
 from .autopcr.module.accountmgr import BATCHINFO, AccountBatch, TaskResultInfo
 from .autopcr.module.modulebase import eResultStatus
-from .autopcr.util.draw_table import outp_b64
+from .autopcr.util.draw_table import outp_b64, grid2img
 from .autopcr.http_server.httpserver import HttpServer
 from .autopcr.db.database import db
 from .autopcr.util.unit_recognizer import instance as unit_recognizer
@@ -19,7 +19,8 @@ import asyncio, datetime
 import aiofiles
 
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageFont
+import base64
 import nonebot
 from nonebot import on_startup
 import hoshino
@@ -33,7 +34,7 @@ import secrets
 from .autopcr.util.pcr_data import get_id_from_name
 import traceback
 from .autopcr.util.logger import instance as logger
-from .autopcr.constants import PUBLIC_ADDRESS as ENV_PUBLIC_ADDRESS, USE_HTTPS
+from .autopcr.constants import PUBLIC_ADDRESS as ENV_PUBLIC_ADDRESS, USE_HTTPS, DATA_DIR
 
 address = ENV_PUBLIC_ADDRESS or None  # 环境变量AUTOPCR_PUBLIC_ADDRESS，不填则会自动尝试获取
 useHttps = bool(USE_HTTPS)
@@ -1230,9 +1231,14 @@ async def ex_equip_wear_cmd(botev: BotEvent, acc: Account):
         result = resp.get_result()
         if selection:
             img = await drawer.draw_task_result(result)
+            msg_ = f"{alias}" + outp_b64(img)
         else:
-            img = await drawer.draw_msgs(result.log.split('\n'))
-        msg_ = f"{alias}" + outp_b64(img)
+            # 查询列表较长，用小字号渲染并加大压缩，避免QQ富媒体上传失败
+            small_font = ImageFont.truetype(str(Path(DATA_DIR) / "微软雅黑.ttf"), 24)
+            img = grid2img([[line] for line in result.log.split('\n')], ["结果"], colors=drawer.color(), font=small_font, stock=True)
+            buf = BytesIO()
+            img.save(buf, format='JPEG', quality=60, optimize=True)
+            msg_ = f"{alias}[CQ:image,file=base64://{base64.b64encode(buf.getvalue()).decode()}]"
     except Exception as e:
         logger.exception(e)
         await botev.send(f'{alias}: {e}')
