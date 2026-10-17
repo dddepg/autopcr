@@ -177,6 +177,9 @@ class ex_equip_wear(Module):
                 w_uid, w_slot = holder
                 w_name = "自己" if w_uid == unit_id else db.get_unit_name(w_uid)
                 if my_cur_sid:
+                    # 服务端要求装备先脱下才能穿到别人身上：先取下双方的，再各自穿上
+                    actions.append((unit_id, slot_no, 0))
+                    actions.append((w_uid, w_slot, 0))
                     actions.append((w_uid, w_slot, my_cur_sid))
                     result_lines.append(f"与{w_name}槽{w_slot}互换装备")
                 else:
